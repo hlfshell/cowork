@@ -113,6 +113,12 @@ temp/
 .cwrules.local
 .cwstate.local
 
+# Cowork workspace directories
+.cw/
+
+# Cowork workspace metadata files
+.cw-workspace.json
+
 # Test data that shouldn't be committed
 testdata/temp/
 testdata/output/
