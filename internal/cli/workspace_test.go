@@ -954,3 +954,763 @@ func findCommand(root *cobra.Command, path ...string) *cobra.Command {
 	}
 	return current
 }
+
+// TestWorkspaceDirCommand tests the workspace dir command structure
+func TestWorkspaceDirCommand(t *testing.T) {
+	// Test case: Workspace dir command should be properly configured
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the dir subcommand
+	var dirCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "dir") {
+			dirCmd = subCmd
+			break
+		}
+	}
+
+	if dirCmd == nil {
+		t.Fatal("workspace dir command not found")
+	}
+
+	// Check command properties
+	if dirCmd.Short != "Change to workspace directory" {
+		t.Errorf("Expected short description 'Change to workspace directory', got '%s'", dirCmd.Short)
+	}
+
+	if !strings.Contains(dirCmd.Long, "Print the directory path") {
+		t.Errorf("Expected long description to contain 'Print the directory path', got '%s'", dirCmd.Long)
+	}
+}
+
+// Helper function to get command names for debugging
+func getCommandNames(cmds []*cobra.Command) []string {
+	names := make([]string, len(cmds))
+	for i, cmd := range cmds {
+		names[i] = cmd.Use
+	}
+	return names
+}
+
+// TestWorkspaceDirCommand_WithInvalidWorkspace tests dir command argument validation
+func TestWorkspaceDirCommand_WithInvalidWorkspace(t *testing.T) {
+	// Test case: Dir command should validate arguments properly
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the dir subcommand
+	var dirCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "dir") {
+			dirCmd = subCmd
+			break
+		}
+	}
+
+	if dirCmd == nil {
+		t.Fatal("workspace dir command not found")
+	}
+
+	// Check that dir command requires exactly one argument
+	if dirCmd.Args == nil {
+		t.Error("dir command should have argument validation")
+	}
+}
+
+// TestWorkspaceGitCommand tests the workspace git command structure
+func TestWorkspaceGitCommand(t *testing.T) {
+	// Test case: Workspace git command should be properly configured
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the git subcommand
+	var gitCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "git") {
+			gitCmd = subCmd
+			break
+		}
+	}
+
+	if gitCmd == nil {
+		t.Fatal("workspace git command not found")
+	}
+
+	// Check command properties
+	if gitCmd.Short != "Run git commands in workspace" {
+		t.Errorf("Expected short description 'Run git commands in workspace', got '%s'", gitCmd.Short)
+	}
+
+	if !strings.Contains(gitCmd.Long, "Execute git commands") {
+		t.Errorf("Expected long description to contain 'Execute git commands', got '%s'", gitCmd.Long)
+	}
+}
+
+// TestWorkspaceGitCommand_WithInvalidWorkspace tests git command argument validation
+func TestWorkspaceGitCommand_WithInvalidWorkspace(t *testing.T) {
+	// Test case: Git command should validate arguments properly
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the git subcommand
+	var gitCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "git") {
+			gitCmd = subCmd
+			break
+		}
+	}
+
+	if gitCmd == nil {
+		t.Fatal("workspace git command not found")
+	}
+
+	// Check that git command requires at least two arguments
+	if gitCmd.Args == nil {
+		t.Error("git command should have argument validation")
+	}
+}
+
+// TestWorkspaceGitCommand_WithInvalidGitCommand tests git command argument validation
+func TestWorkspaceGitCommand_WithInvalidGitCommand(t *testing.T) {
+	// Test case: Git command should validate minimum arguments
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the git subcommand
+	var gitCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "git") {
+			gitCmd = subCmd
+			break
+		}
+	}
+
+	if gitCmd == nil {
+		t.Fatal("workspace git command not found")
+	}
+
+	if gitCmd.Args == nil {
+		t.Error("git command should have argument validation")
+	}
+}
+
+// TestWorkspaceAlias tests that the ws alias works correctly
+func TestWorkspaceAlias(t *testing.T) {
+	// Test case: ws alias should be properly configured
+	app := NewApp("test", "test", "test")
+
+	// Find the ws command
+	var wsCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "ws" {
+			wsCmd = cmd
+			break
+		}
+	}
+
+	if wsCmd == nil {
+		t.Fatal("ws command not found")
+	}
+
+	// Check that ws command has the same subcommands as workspace
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Check that ws has the same number of subcommands as workspace
+	if len(wsCmd.Commands()) != len(workspaceCmd.Commands()) {
+		t.Errorf("Expected ws to have %d subcommands, got %d", len(workspaceCmd.Commands()), len(wsCmd.Commands()))
+	}
+
+	// Check that ws has the dir and git subcommands
+	var hasDir, hasGit bool
+	for _, subCmd := range wsCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "dir") {
+			hasDir = true
+		}
+		if strings.HasPrefix(subCmd.Use, "git") {
+			hasGit = true
+		}
+	}
+
+	if !hasDir {
+		t.Error("ws command missing dir subcommand")
+	}
+
+	if !hasGit {
+		t.Error("ws command missing git subcommand")
+	}
+}
+
+// TestWorkspaceDirCommand_WithNoArgs tests dir command argument validation
+func TestWorkspaceDirCommand_WithNoArgs(t *testing.T) {
+	// Test case: Dir command should validate arguments properly
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the dir subcommand
+	var dirCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "dir") {
+			dirCmd = subCmd
+			break
+		}
+	}
+
+	if dirCmd == nil {
+		t.Fatal("workspace dir command not found")
+	}
+
+	// Check that dir command requires exactly one argument
+	if dirCmd.Args == nil {
+		t.Error("dir command should have argument validation")
+	}
+}
+
+// TestWorkspaceGitCommand_WithInsufficientArgs tests git command argument validation
+func TestWorkspaceGitCommand_WithInsufficientArgs(t *testing.T) {
+	// Test case: Git command should validate minimum arguments
+	app := NewApp("test", "test", "test")
+
+	// Find the workspace command
+	var workspaceCmd *cobra.Command
+	for _, cmd := range app.rootCmd.Commands() {
+		if cmd.Use == "workspace" {
+			workspaceCmd = cmd
+			break
+		}
+	}
+
+	if workspaceCmd == nil {
+		t.Fatal("workspace command not found")
+	}
+
+	// Find the git subcommand
+	var gitCmd *cobra.Command
+	for _, subCmd := range workspaceCmd.Commands() {
+		if strings.HasPrefix(subCmd.Use, "git") {
+			gitCmd = subCmd
+			break
+		}
+	}
+
+	if gitCmd == nil {
+		t.Fatal("workspace git command not found")
+	}
+
+	// Check that git command requires at least two arguments
+	if gitCmd.Args == nil {
+		t.Error("git command should have argument validation")
+	}
+}
+
+// TestWorkspaceDirCommand_Functional tests the workspace dir command with actual workspace
+func TestWorkspaceDirCommand_Functional(t *testing.T) {
+	// Test case: Dir command should return the correct workspace directory path
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Create a test workspace
+	req := &types.CreateWorkspaceRequest{
+		TaskName:   "test-task",
+		SourceRepo: tempDir,
+		BaseBranch: "main",
+	}
+
+	workspace, err := app.workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		t.Fatalf("Failed to create test workspace: %v", err)
+	}
+
+	// Test dir command with task name
+	var output bytes.Buffer
+	app.rootCmd.SetOut(&output)
+	app.rootCmd.SetErr(&output)
+
+	app.rootCmd.SetArgs([]string{"workspace", "dir", "test-task"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Dir command failed: %v", err)
+	}
+
+	outputStr := strings.TrimSpace(output.String())
+
+	// Check that the output is the workspace path
+	if outputStr != workspace.Path {
+		t.Errorf("Expected workspace path '%s', got '%s'", workspace.Path, outputStr)
+	}
+
+	// Verify the path exists
+	if _, err := os.Stat(outputStr); os.IsNotExist(err) {
+		t.Errorf("Workspace directory does not exist: %s", outputStr)
+	}
+
+	// Test dir command with workspace ID
+	output.Reset()
+	app.rootCmd.SetArgs([]string{"workspace", "dir", workspace.ID})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Dir command failed with workspace ID: %v", err)
+	}
+
+	outputStr = strings.TrimSpace(output.String())
+
+	// Check that the output is the workspace path
+	if outputStr != workspace.Path {
+		t.Errorf("Expected workspace path '%s', got '%s'", workspace.Path, outputStr)
+	}
+}
+
+// TestWorkspaceDirCommand_WithInvalidWorkspace_Functional tests the workspace dir command with invalid workspace
+func TestWorkspaceDirCommand_WithInvalidWorkspace_Functional(t *testing.T) {
+	// Test case: Dir command should fail with invalid workspace identifier
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Test dir command with invalid workspace name
+	var output bytes.Buffer
+	app.rootCmd.SetOut(&output)
+	app.rootCmd.SetErr(&output)
+
+	app.rootCmd.SetArgs([]string{"workspace", "dir", "invalid-workspace"})
+
+	err = app.rootCmd.Execute()
+	if err == nil {
+		t.Error("Expected error for invalid workspace, got nil")
+	}
+
+	expectedError := "workspace not found"
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("Expected error to contain '%s', got '%s'", expectedError, err.Error())
+	}
+
+	// Test dir command with invalid workspace ID
+	output.Reset()
+	app.rootCmd.SetArgs([]string{"workspace", "dir", "invalid-id-123"})
+
+	err = app.rootCmd.Execute()
+	if err == nil {
+		t.Error("Expected error for invalid workspace ID, got nil")
+	}
+
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("Expected error to contain '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+// TestWorkspaceGitCommand_Functional tests the workspace git command with actual workspace
+func TestWorkspaceGitCommand_Functional(t *testing.T) {
+	// Test case: Git command should execute git commands in the workspace directory
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Create a test workspace
+	req := &types.CreateWorkspaceRequest{
+		TaskName:   "test-task",
+		SourceRepo: tempDir,
+		BaseBranch: "main",
+	}
+
+	workspace, err := app.workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		t.Fatalf("Failed to create test workspace: %v", err)
+	}
+
+	// Test git status command in workspace
+	// Note: Git command outputs directly to stdout/stderr, not through cobra
+	app.rootCmd.SetArgs([]string{"workspace", "git", "test-task", "status"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git status command failed: %v", err)
+	}
+
+	// Test git branch command in workspace
+	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "branch"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git branch command failed: %v", err)
+	}
+
+	// Test git log command in workspace (simple version)
+	app.rootCmd.SetArgs([]string{"workspace", "git", "test-task", "log"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git log command failed: %v", err)
+	}
+}
+
+// TestWorkspaceGitCommand_WithInvalidWorkspace_Functional tests the workspace git command with invalid workspace
+func TestWorkspaceGitCommand_WithInvalidWorkspace_Functional(t *testing.T) {
+	// Test case: Git command should fail with invalid workspace identifier
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Test git command with invalid workspace name
+	var output bytes.Buffer
+	app.rootCmd.SetOut(&output)
+	app.rootCmd.SetErr(&output)
+
+	app.rootCmd.SetArgs([]string{"workspace", "git", "invalid-workspace", "status"})
+
+	err = app.rootCmd.Execute()
+	if err == nil {
+		t.Error("Expected error for invalid workspace, got nil")
+	}
+
+	expectedError := "workspace not found"
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("Expected error to contain '%s', got '%s'", expectedError, err.Error())
+	}
+
+	// Test git command with invalid workspace ID
+	output.Reset()
+	app.rootCmd.SetArgs([]string{"workspace", "git", "invalid-id-123", "status"})
+
+	err = app.rootCmd.Execute()
+	if err == nil {
+		t.Error("Expected error for invalid workspace ID, got nil")
+	}
+
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("Expected error to contain '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+// TestWorkspaceGitCommand_WithGitOperations tests the workspace git command with various git operations
+func TestWorkspaceGitCommand_WithGitOperations(t *testing.T) {
+	// Test case: Git command should support various git operations in workspace
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Create a test workspace
+	req := &types.CreateWorkspaceRequest{
+		TaskName:   "test-task",
+		SourceRepo: tempDir,
+		BaseBranch: "main",
+	}
+
+	workspace, err := app.workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		t.Fatalf("Failed to create test workspace: %v", err)
+	}
+
+	// Test git config command
+	app.rootCmd.SetArgs([]string{"workspace", "git", "test-task", "config", "user.name"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git config command failed: %v", err)
+	}
+
+	// Test git remote command
+	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "remote"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git remote command failed: %v", err)
+	}
+
+	// Test git diff command (should be empty initially)
+	app.rootCmd.SetArgs([]string{"workspace", "git", "test-task", "diff"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git diff command failed: %v", err)
+	}
+}
+
+// TestWorkspaceGitCommand_WithMultipleArgs tests the workspace git command with multiple git arguments
+func TestWorkspaceGitCommand_WithMultipleArgs(t *testing.T) {
+	// Test case: Git command should handle multiple git arguments correctly
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Create a test workspace
+	req := &types.CreateWorkspaceRequest{
+		TaskName:   "test-task",
+		SourceRepo: tempDir,
+		BaseBranch: "main",
+	}
+
+	workspace, err := app.workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		t.Fatalf("Failed to create test workspace: %v", err)
+	}
+
+	// Test git log with multiple arguments
+	app.rootCmd.SetArgs([]string{"workspace", "git", "test-task", "log", "HEAD"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git log command with multiple args failed: %v", err)
+	}
+
+	// Test git show with multiple arguments
+	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "show", "HEAD"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git show command with multiple args failed: %v", err)
+	}
+}
+
+// TestWorkspaceDirAndGitCommands_Integration tests both dir and git commands together
+func TestWorkspaceDirAndGitCommands_Integration(t *testing.T) {
+	// Test case: Integration test of dir and git commands working together
+	tempDir := createTempGitRepo(t)
+
+	// Change to the temporary directory
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer os.Chdir(originalDir)
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+
+	app := NewApp("test", "test", "test")
+	if app.workspaceManager == nil {
+		t.Fatal("Workspace manager should be initialized in a Git repository")
+	}
+
+	// Create a test workspace
+	req := &types.CreateWorkspaceRequest{
+		TaskName:   "integration-test",
+		SourceRepo: tempDir,
+		BaseBranch: "main",
+	}
+
+	workspace, err := app.workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		t.Fatalf("Failed to create test workspace: %v", err)
+	}
+
+	// Test dir command to get workspace path
+	var output bytes.Buffer
+	app.rootCmd.SetOut(&output)
+	app.rootCmd.SetErr(&output)
+
+	app.rootCmd.SetArgs([]string{"workspace", "dir", "integration-test"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Dir command failed: %v", err)
+	}
+
+	workspacePath := strings.TrimSpace(output.String())
+
+	// Verify the path matches the workspace path
+	if workspacePath != workspace.Path {
+		t.Errorf("Expected workspace path '%s', got '%s'", workspace.Path, workspacePath)
+	}
+
+	// Test git command in the same workspace
+	app.rootCmd.SetArgs([]string{"workspace", "git", "integration-test", "rev-parse", "HEAD"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git rev-parse command failed: %v", err)
+	}
+
+	// Test that both commands work with workspace ID
+	output.Reset()
+	app.rootCmd.SetArgs([]string{"workspace", "dir", workspace.ID})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Dir command with ID failed: %v", err)
+	}
+
+	workspacePathFromID := strings.TrimSpace(output.String())
+
+	if workspacePathFromID != workspace.Path {
+		t.Errorf("Expected workspace path '%s', got '%s'", workspace.Path, workspacePathFromID)
+	}
+
+	// Test git branch command with workspace ID
+	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "branch"})
+
+	err = app.rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Git branch command with ID failed: %v", err)
+	}
+}

@@ -712,3 +712,320 @@ func TestManager_GetDefaultConfig(t *testing.T) {
 		t.Error("Expected default include caller to be false")
 	}
 }
+
+// TestManager_GetDefaultConfig_WithAuth tests getting the default configuration with auth
+func TestManager_GetDefaultConfig_WithAuth(t *testing.T) {
+	// Test case: Default configuration should include auth settings
+	manager := NewManager()
+	defaultConfig := manager.GetDefaultConfig()
+
+	// Test Git auth configuration
+	if defaultConfig.Auth.Git.User.Name != "" {
+		t.Errorf("Expected empty Git user name, got: %s", defaultConfig.Auth.Git.User.Name)
+	}
+	if defaultConfig.Auth.Git.User.Email != "" {
+		t.Errorf("Expected empty Git user email, got: %s", defaultConfig.Auth.Git.User.Email)
+	}
+	if defaultConfig.Auth.Git.DefaultMethod != "ssh" {
+		t.Errorf("Expected default Git method to be 'ssh', got: %s", defaultConfig.Auth.Git.DefaultMethod)
+	}
+	if defaultConfig.Auth.Git.CredentialHelper != "cache" {
+		t.Errorf("Expected default credential helper to be 'cache', got: %s", defaultConfig.Auth.Git.CredentialHelper)
+	}
+
+	// Test SSH configuration
+	if defaultConfig.Auth.Git.SSH.KeyPath != "~/.ssh/id_rsa" {
+		t.Errorf("Expected default SSH key path to be '~/.ssh/id_rsa', got: %s", defaultConfig.Auth.Git.SSH.KeyPath)
+	}
+	if !defaultConfig.Auth.Git.SSH.UseAgent {
+		t.Error("Expected default SSH use agent to be true")
+	}
+	if !defaultConfig.Auth.Git.SSH.StrictHostKeyChecking {
+		t.Error("Expected default SSH strict host key checking to be true")
+	}
+
+	// Test HTTPS configuration
+	if defaultConfig.Auth.Git.HTTPS.TokenType != "github" {
+		t.Errorf("Expected default token type to be 'github', got: %s", defaultConfig.Auth.Git.HTTPS.TokenType)
+	}
+	if !defaultConfig.Auth.Git.HTTPS.StoreCredentials {
+		t.Error("Expected default store credentials to be true")
+	}
+	if defaultConfig.Auth.Git.HTTPS.HelperTimeout != 900 {
+		t.Errorf("Expected default helper timeout to be 900, got: %d", defaultConfig.Auth.Git.HTTPS.HelperTimeout)
+	}
+
+	// Test Container auth configuration
+	if defaultConfig.Auth.Container.DefaultRegistry != "docker.io" {
+		t.Errorf("Expected default registry to be 'docker.io', got: %s", defaultConfig.Auth.Container.DefaultRegistry)
+	}
+	if !defaultConfig.Auth.Container.UseCredentialHelper {
+		t.Error("Expected default use credential helper to be true")
+	}
+	if defaultConfig.Auth.Container.HelperTimeout != 900 {
+		t.Errorf("Expected default helper timeout to be 900, got: %d", defaultConfig.Auth.Container.HelperTimeout)
+	}
+	if defaultConfig.Auth.Container.Registries == nil {
+		t.Error("Expected registries map to be initialized")
+	}
+}
+
+// TestManager_Load_WithAuthConfig tests loading configuration with auth settings
+func TestManager_Load_WithAuthConfig(t *testing.T) {
+	// Test case: Loading configuration should properly merge auth settings
+	manager := NewManager()
+
+	// Create temporary directory for test
+	tempDir := t.TempDir()
+	manager.GlobalConfigPath = filepath.Join(tempDir, ".cwconfig")
+
+	// Create global config with auth settings
+	globalConfig := &Config{
+		Auth: AuthConfig{
+			Git: GitAuthConfig{
+				User: GitUserConfig{
+					Name:  "Test User",
+					Email: "test@example.com",
+				},
+				SSH: SSHConfig{
+					KeyPath: "~/.ssh/test_key",
+					UseAgent: false,
+				},
+				HTTPS: HTTPSConfig{
+					Username: "testuser",
+					TokenType: "gitlab",
+				},
+				DefaultMethod: "https",
+			},
+			Container: ContainerAuthConfig{
+				DefaultRegistry: "test.registry.com",
+				Registries: map[string]RegistryConfig{
+					"test-registry": {
+						URL:        "https://test.registry.com",
+						Username:   "testuser",
+						AuthMethod: "basic",
+					},
+				},
+			},
+		},
+	}
+
+	// Save global config
+	if err := manager.SaveGlobal(globalConfig); err != nil {
+		t.Fatalf("Failed to save global config: %v", err)
+	}
+
+	// Load configuration
+	config, err := manager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Verify Git auth settings
+	if config.Auth.Git.User.Name != "Test User" {
+		t.Errorf("Expected Git user name to be 'Test User', got: %s", config.Auth.Git.User.Name)
+	}
+	if config.Auth.Git.User.Email != "test@example.com" {
+		t.Errorf("Expected Git user email to be 'test@example.com', got: %s", config.Auth.Git.User.Email)
+	}
+	if config.Auth.Git.SSH.KeyPath != "~/.ssh/test_key" {
+		t.Errorf("Expected SSH key path to be '~/.ssh/test_key', got: %s", config.Auth.Git.SSH.KeyPath)
+	}
+	if config.Auth.Git.SSH.UseAgent {
+		t.Error("Expected SSH use agent to be false")
+	}
+	if config.Auth.Git.HTTPS.Username != "testuser" {
+		t.Errorf("Expected HTTPS username to be 'testuser', got: %s", config.Auth.Git.HTTPS.Username)
+	}
+	if config.Auth.Git.HTTPS.TokenType != "gitlab" {
+		t.Errorf("Expected token type to be 'gitlab', got: %s", config.Auth.Git.HTTPS.TokenType)
+	}
+	if config.Auth.Git.DefaultMethod != "https" {
+		t.Errorf("Expected default method to be 'https', got: %s", config.Auth.Git.DefaultMethod)
+	}
+
+	// Verify Container auth settings
+	if config.Auth.Container.DefaultRegistry != "test.registry.com" {
+		t.Errorf("Expected default registry to be 'test.registry.com', got: %s", config.Auth.Container.DefaultRegistry)
+	}
+	if len(config.Auth.Container.Registries) != 1 {
+		t.Errorf("Expected 1 registry, got: %d", len(config.Auth.Container.Registries))
+	}
+	testRegistry, exists := config.Auth.Container.Registries["test-registry"]
+	if !exists {
+		t.Error("Expected test-registry to exist")
+	}
+	if testRegistry.URL != "https://test.registry.com" {
+		t.Errorf("Expected registry URL to be 'https://test.registry.com', got: %s", testRegistry.URL)
+	}
+	if testRegistry.Username != "testuser" {
+		t.Errorf("Expected registry username to be 'testuser', got: %s", testRegistry.Username)
+	}
+	if testRegistry.AuthMethod != "basic" {
+		t.Errorf("Expected registry auth method to be 'basic', got: %s", testRegistry.AuthMethod)
+	}
+}
+
+// TestManager_Load_WithProjectAuthOverride tests project auth configuration override
+func TestManager_Load_WithProjectAuthOverride(t *testing.T) {
+	// Test case: Project auth config should override global auth config
+	manager := NewManager()
+
+	// Create temporary directory for test
+	tempDir := t.TempDir()
+	manager.GlobalConfigPath = filepath.Join(tempDir, ".cwconfig")
+	manager.ProjectConfigPath = filepath.Join(tempDir, ".cwconfig")
+
+	// Create global config
+	globalConfig := &Config{
+		Auth: AuthConfig{
+			Git: GitAuthConfig{
+				User: GitUserConfig{
+					Name:  "Global User",
+					Email: "global@example.com",
+				},
+				DefaultMethod: "ssh",
+			},
+			Container: ContainerAuthConfig{
+				DefaultRegistry: "global.registry.com",
+			},
+		},
+	}
+
+	// Create project config with overrides
+	projectConfig := &Config{
+		Auth: AuthConfig{
+			Git: GitAuthConfig{
+				User: GitUserConfig{
+					Name:  "Project User",
+					Email: "project@example.com",
+				},
+				DefaultMethod: "https",
+			},
+			Container: ContainerAuthConfig{
+				DefaultRegistry: "project.registry.com",
+				Registries: map[string]RegistryConfig{
+					"project-registry": {
+						URL:        "https://project.registry.com",
+						Username:   "projectuser",
+						AuthMethod: "token",
+					},
+				},
+			},
+		},
+	}
+
+	// Save both configs
+	if err := manager.SaveGlobal(globalConfig); err != nil {
+		t.Fatalf("Failed to save global config: %v", err)
+	}
+	if err := manager.SaveProject(projectConfig); err != nil {
+		t.Fatalf("Failed to save project config: %v", err)
+	}
+
+	// Load configuration
+	config, err := manager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Verify project overrides took effect
+	if config.Auth.Git.User.Name != "Project User" {
+		t.Errorf("Expected Git user name to be 'Project User', got: %s", config.Auth.Git.User.Name)
+	}
+	if config.Auth.Git.User.Email != "project@example.com" {
+		t.Errorf("Expected Git user email to be 'project@example.com', got: %s", config.Auth.Git.User.Email)
+	}
+	if config.Auth.Git.DefaultMethod != "https" {
+		t.Errorf("Expected default method to be 'https', got: %s", config.Auth.Git.DefaultMethod)
+	}
+	if config.Auth.Container.DefaultRegistry != "project.registry.com" {
+		t.Errorf("Expected default registry to be 'project.registry.com', got: %s", config.Auth.Container.DefaultRegistry)
+	}
+
+	// Verify project registry was added
+	if len(config.Auth.Container.Registries) != 1 {
+		t.Errorf("Expected 1 registry, got: %d", len(config.Auth.Container.Registries))
+	}
+	projectRegistry, exists := config.Auth.Container.Registries["project-registry"]
+	if !exists {
+		t.Error("Expected project-registry to exist")
+	}
+	if projectRegistry.URL != "https://project.registry.com" {
+		t.Errorf("Expected registry URL to be 'https://project.registry.com', got: %s", projectRegistry.URL)
+	}
+	if projectRegistry.Username != "projectuser" {
+		t.Errorf("Expected registry username to be 'projectuser', got: %s", projectRegistry.Username)
+	}
+	if projectRegistry.AuthMethod != "token" {
+		t.Errorf("Expected registry auth method to be 'token', got: %s", projectRegistry.AuthMethod)
+	}
+}
+
+// TestAuthConfig_Validation tests auth configuration validation
+func TestAuthConfig_Validation(t *testing.T) {
+	// Test case: Auth configuration should have valid default values
+	manager := NewManager()
+	defaultConfig := manager.GetDefaultConfig()
+
+	// Test Git auth validation
+	if defaultConfig.Auth.Git.DefaultMethod != "ssh" && defaultConfig.Auth.Git.DefaultMethod != "https" {
+		t.Errorf("Invalid default Git method: %s", defaultConfig.Auth.Git.DefaultMethod)
+	}
+
+	// Test SSH config validation
+	if defaultConfig.Auth.Git.SSH.KeyPath == "" {
+		t.Error("SSH key path should not be empty")
+	}
+	if defaultConfig.Auth.Git.SSH.KnownHostsFile == "" {
+		t.Error("SSH known hosts file should not be empty")
+	}
+
+	// Test HTTPS config validation
+	if defaultConfig.Auth.Git.HTTPS.TokenType != "github" && 
+	   defaultConfig.Auth.Git.HTTPS.TokenType != "gitlab" && 
+	   defaultConfig.Auth.Git.HTTPS.TokenType != "generic" {
+		t.Errorf("Invalid token type: %s", defaultConfig.Auth.Git.HTTPS.TokenType)
+	}
+	if defaultConfig.Auth.Git.HTTPS.HelperTimeout <= 0 {
+		t.Error("Helper timeout should be positive")
+	}
+
+	// Test Container auth validation
+	if defaultConfig.Auth.Container.DefaultRegistry == "" {
+		t.Error("Default registry should not be empty")
+	}
+	if defaultConfig.Auth.Container.HelperTimeout <= 0 {
+		t.Error("Helper timeout should be positive")
+	}
+	if defaultConfig.Auth.Container.Registries == nil {
+		t.Error("Registries map should be initialized")
+	}
+}
+
+// TestRegistryConfig_Validation tests registry configuration validation
+func TestRegistryConfig_Validation(t *testing.T) {
+	// Test case: Registry configuration should have valid structure
+	registry := RegistryConfig{
+		URL:        "https://test.registry.com",
+		Username:   "testuser",
+		Password:   "testpass",
+		AuthMethod: "basic",
+		Insecure:   false,
+		Namespace:  "testnamespace",
+		APIVersion: "v2",
+	}
+
+	// Test basic validation
+	if registry.URL == "" {
+		t.Error("Registry URL should not be empty")
+	}
+	if registry.AuthMethod != "basic" && 
+	   registry.AuthMethod != "token" && 
+	   registry.AuthMethod != "oauth" {
+		t.Errorf("Invalid auth method: %s", registry.AuthMethod)
+	}
+	if registry.APIVersion != "v1" && registry.APIVersion != "v2" {
+		t.Errorf("Invalid API version: %s", registry.APIVersion)
+	}
+}

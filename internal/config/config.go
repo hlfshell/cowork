@@ -27,6 +27,9 @@ type Config struct {
 
 	// Logging settings
 	Logging LoggingConfig `yaml:"logging"`
+
+	// Authentication settings
+	Auth AuthConfig `yaml:"auth"`
 }
 
 // WorkspaceConfig contains workspace-related configuration
@@ -204,6 +207,115 @@ type LoggingConfig struct {
 
 	// Include caller information
 	IncludeCaller bool `yaml:"include_caller" default:"false"`
+}
+
+// AuthConfig contains authentication configuration for various services
+type AuthConfig struct {
+	// Git authentication settings
+	Git GitAuthConfig `yaml:"git"`
+
+	// Container registry authentication settings
+	Container ContainerAuthConfig `yaml:"container"`
+
+	// Future authentication settings can be added here
+	// Cloud CloudAuthConfig `yaml:"cloud"`
+	// AI AIAuthConfig `yaml:"ai"`
+}
+
+// GitAuthConfig contains Git authentication configuration
+type GitAuthConfig struct {
+	// Git user configuration
+	User GitUserConfig `yaml:"user"`
+
+	// SSH key configuration
+	SSH SSHConfig `yaml:"ssh"`
+
+	// HTTPS authentication
+	HTTPS HTTPSConfig `yaml:"https"`
+
+	// Git credential helper
+	CredentialHelper string `yaml:"credential_helper" default:"cache"`
+
+	// Default authentication method (ssh, https, token)
+	DefaultMethod string `yaml:"default_method" default:"ssh"`
+}
+
+// SSHConfig contains SSH authentication configuration
+type SSHConfig struct {
+	// SSH key path
+	KeyPath string `yaml:"key_path" default:"~/.ssh/id_rsa"`
+
+	// SSH key passphrase (encrypted)
+	Passphrase string `yaml:"passphrase" default:""`
+
+	// SSH agent socket
+	AgentSocket string `yaml:"agent_socket" default:""`
+
+	// Use SSH agent
+	UseAgent bool `yaml:"use_agent" default:"true"`
+
+	// SSH known hosts file
+	KnownHostsFile string `yaml:"known_hosts_file" default:"~/.ssh/known_hosts"`
+
+	// Strict host key checking
+	StrictHostKeyChecking bool `yaml:"strict_host_key_checking" default:"true"`
+}
+
+// HTTPSConfig contains HTTPS authentication configuration
+type HTTPSConfig struct {
+	// Username for HTTPS authentication
+	Username string `yaml:"username" default:""`
+
+	// Personal access token (encrypted)
+	Token string `yaml:"token" default:""`
+
+	// Token type (github, gitlab, generic)
+	TokenType string `yaml:"token_type" default:"github"`
+
+	// Store credentials in credential helper
+	StoreCredentials bool `yaml:"store_credentials" default:"true"`
+
+	// Credential helper timeout in seconds
+	HelperTimeout int `yaml:"helper_timeout" default:"900"`
+}
+
+// ContainerAuthConfig contains container registry authentication configuration
+type ContainerAuthConfig struct {
+	// Default registry
+	DefaultRegistry string `yaml:"default_registry" default:"docker.io"`
+
+	// Registry configurations
+	Registries map[string]RegistryConfig `yaml:"registries" default:"{}"`
+
+	// Use credential helper
+	UseCredentialHelper bool `yaml:"use_credential_helper" default:"true"`
+
+	// Credential helper timeout in seconds
+	HelperTimeout int `yaml:"helper_timeout" default:"900"`
+}
+
+// RegistryConfig contains configuration for a specific container registry
+type RegistryConfig struct {
+	// Registry URL
+	URL string `yaml:"url"`
+
+	// Username for authentication
+	Username string `yaml:"username" default:""`
+
+	// Password/token (encrypted)
+	Password string `yaml:"password" default:""`
+
+	// Authentication method (basic, token, oauth)
+	AuthMethod string `yaml:"auth_method" default:"basic"`
+
+	// Skip TLS verification
+	Insecure bool `yaml:"insecure" default:"false"`
+
+	// Registry namespace/organization
+	Namespace string `yaml:"namespace" default:""`
+
+	// Registry API version
+	APIVersion string `yaml:"api_version" default:"v2"`
 }
 
 // Manager handles configuration loading and merging
@@ -418,6 +530,62 @@ func (m *Manager) mergeConfig(target, source *Config) {
 	}
 	target.Logging.IncludeTimestamp = source.Logging.IncludeTimestamp
 	target.Logging.IncludeCaller = source.Logging.IncludeCaller
+
+	// Auth config
+	if source.Auth.Git.User.Name != "" {
+		target.Auth.Git.User.Name = source.Auth.Git.User.Name
+	}
+	if source.Auth.Git.User.Email != "" {
+		target.Auth.Git.User.Email = source.Auth.Git.User.Email
+	}
+	if source.Auth.Git.SSH.KeyPath != "" {
+		target.Auth.Git.SSH.KeyPath = source.Auth.Git.SSH.KeyPath
+	}
+	if source.Auth.Git.SSH.Passphrase != "" {
+		target.Auth.Git.SSH.Passphrase = source.Auth.Git.SSH.Passphrase
+	}
+	if source.Auth.Git.SSH.AgentSocket != "" {
+		target.Auth.Git.SSH.AgentSocket = source.Auth.Git.SSH.AgentSocket
+	}
+	target.Auth.Git.SSH.UseAgent = source.Auth.Git.SSH.UseAgent
+	if source.Auth.Git.SSH.KnownHostsFile != "" {
+		target.Auth.Git.SSH.KnownHostsFile = source.Auth.Git.SSH.KnownHostsFile
+	}
+	target.Auth.Git.SSH.StrictHostKeyChecking = source.Auth.Git.SSH.StrictHostKeyChecking
+	if source.Auth.Git.HTTPS.Username != "" {
+		target.Auth.Git.HTTPS.Username = source.Auth.Git.HTTPS.Username
+	}
+	if source.Auth.Git.HTTPS.Token != "" {
+		target.Auth.Git.HTTPS.Token = source.Auth.Git.HTTPS.Token
+	}
+	if source.Auth.Git.HTTPS.TokenType != "" {
+		target.Auth.Git.HTTPS.TokenType = source.Auth.Git.HTTPS.TokenType
+	}
+	target.Auth.Git.HTTPS.StoreCredentials = source.Auth.Git.HTTPS.StoreCredentials
+	if source.Auth.Git.HTTPS.HelperTimeout != 0 {
+		target.Auth.Git.HTTPS.HelperTimeout = source.Auth.Git.HTTPS.HelperTimeout
+	}
+	if source.Auth.Git.CredentialHelper != "" {
+		target.Auth.Git.CredentialHelper = source.Auth.Git.CredentialHelper
+	}
+	if source.Auth.Git.DefaultMethod != "" {
+		target.Auth.Git.DefaultMethod = source.Auth.Git.DefaultMethod
+	}
+	if source.Auth.Container.DefaultRegistry != "" {
+		target.Auth.Container.DefaultRegistry = source.Auth.Container.DefaultRegistry
+	}
+	if len(source.Auth.Container.Registries) > 0 {
+		if target.Auth.Container.Registries == nil {
+			target.Auth.Container.Registries = make(map[string]RegistryConfig)
+		}
+		for name, registry := range source.Auth.Container.Registries {
+			target.Auth.Container.Registries[name] = registry
+		}
+	}
+	target.Auth.Container.UseCredentialHelper = source.Auth.Container.UseCredentialHelper
+	if source.Auth.Container.HelperTimeout != 0 {
+		target.Auth.Container.HelperTimeout = source.Auth.Container.HelperTimeout
+	}
 }
 
 // GetDefaultConfig returns the default configuration
@@ -511,6 +679,37 @@ func (m *Manager) GetDefaultConfig() *Config {
 			File:             "",
 			IncludeTimestamp: true,
 			IncludeCaller:    false,
+		},
+		Auth: AuthConfig{
+			Git: GitAuthConfig{
+				User: GitUserConfig{
+					Name:  "",
+					Email: "",
+				},
+				SSH: SSHConfig{
+					KeyPath:                "~/.ssh/id_rsa",
+					Passphrase:             "",
+					AgentSocket:            "",
+					UseAgent:               true,
+					KnownHostsFile:         "~/.ssh/known_hosts",
+					StrictHostKeyChecking:  true,
+				},
+				HTTPS: HTTPSConfig{
+					Username:         "",
+					Token:            "",
+					TokenType:        "github",
+					StoreCredentials: true,
+					HelperTimeout:    900,
+				},
+				CredentialHelper: "cache",
+				DefaultMethod:    "ssh",
+			},
+			Container: ContainerAuthConfig{
+				DefaultRegistry:      "docker.io",
+				Registries:          map[string]RegistryConfig{},
+				UseCredentialHelper: true,
+				HelperTimeout:       900,
+			},
 		},
 	}
 }
