@@ -2,7 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/hlfshell/cowork/internal/config"
 	"github.com/hlfshell/cowork/internal/git"
 	"github.com/hlfshell/cowork/internal/types"
 	"github.com/hlfshell/cowork/internal/workspace"
@@ -20,6 +24,12 @@ type App struct {
 
 // NewApp creates a new CLI application with the specified version information
 func NewApp(version, buildDate, gitCommit string) *App {
+	// Check and initialize global configuration on first run
+	configManager := config.NewManager()
+	if err := ensureGlobalConfigExists(configManager); err != nil {
+		fmt.Printf("Warning: failed to initialize global configuration: %v\n", err)
+	}
+
 	// Initialize workspace manager
 	workspaceManager, err := workspace.NewManager(300)
 	if err != nil {
@@ -36,6 +46,27 @@ func NewApp(version, buildDate, gitCommit string) *App {
 
 	app.setupCommands()
 	return app
+}
+
+// ensureGlobalConfigExists checks if the global configuration file exists and creates it if it doesn't
+func ensureGlobalConfigExists(configManager *config.Manager) error {
+	// Check if global config file exists
+	if _, err := os.Stat(configManager.GlobalConfigPath); os.IsNotExist(err) {
+		// Create the directory if it doesn't exist
+		configDir := filepath.Dir(configManager.GlobalConfigPath)
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+
+		// Create default configuration
+		defaultConfig := configManager.GetDefaultConfig()
+		if err := configManager.SaveGlobal(defaultConfig); err != nil {
+			return fmt.Errorf("failed to create default global configuration: %w", err)
+		}
+
+		fmt.Printf("✅ Created default global configuration at: %s\n", configManager.GlobalConfigPath)
+	}
+	return nil
 }
 
 // setupCommands initializes all CLI commands and their structure
@@ -69,6 +100,9 @@ For more information, visit: https://github.com/hlfshell/cowork`,
 	// Add version command
 	app.addVersionCommand()
 
+	// Add init command
+	app.addInitCommand()
+
 	// Add workspace commands (placeholder for future implementation)
 	app.addWorkspaceCommands()
 
@@ -77,6 +111,9 @@ For more information, visit: https://github.com/hlfshell/cowork`,
 
 	// Add agent commands (placeholder for future implementation)
 	app.addAgentCommands()
+
+	// Add config commands
+	app.addConfigCommands()
 }
 
 // addVersionCommand adds a detailed version command
@@ -93,6 +130,20 @@ func (app *App) addVersionCommand() {
 	}
 
 	app.rootCmd.AddCommand(versionCmd)
+}
+
+// addInitCommand adds the init command for initializing a project
+func (app *App) addInitCommand() {
+	initCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize cowork for the current project",
+		Long:  "Initialize cowork for the current Git repository by creating the .cw directory and project configuration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.initializeProject(cmd)
+		},
+	}
+
+	app.rootCmd.AddCommand(initCmd)
 }
 
 // addWorkspaceCommands adds workspace management commands
@@ -420,4 +471,83 @@ Examples:
 This is a development version. Many features are not yet implemented.
 `
 	fmt.Print(instructions)
+}
+
+// initializeProject initializes cowork for the current project
+func (app *App) initializeProject(cmd *cobra.Command) error {
+	// Check if we're in a Git repository
+	repoInfo, err := git.DetectCurrentRepository()
+	if err != nil {
+		return fmt.Errorf("failed to detect Git repository: %w", err)
+	}
+
+	cmd.Printf("✅ Detected Git repository: %s\n", repoInfo.Path)
+	cmd.Printf("   Current branch: %s\n", repoInfo.CurrentBranch)
+
+	// Create .cw directory
+	cwDir := filepath.Join(repoInfo.Path, ".cw")
+	if err := os.MkdirAll(cwDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .cw directory: %w", err)
+	}
+	cmd.Printf("✅ Created .cw directory: %s\n", cwDir)
+
+	// Create workspaces directory
+	workspacesDir := filepath.Join(cwDir, "workspaces")
+	if err := os.MkdirAll(workspacesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create workspaces directory: %w", err)
+	}
+	cmd.Printf("✅ Created workspaces directory: %s\n", workspacesDir)
+
+	// Check if project config exists, create if not
+	configManager := config.NewManager()
+	projectConfigPath := filepath.Join(repoInfo.Path, ".cwconfig")
+	if _, err := os.Stat(projectConfigPath); os.IsNotExist(err) {
+		// Create default project configuration
+		defaultConfig := configManager.GetDefaultConfig()
+		if err := configManager.SaveProject(defaultConfig); err != nil {
+			return fmt.Errorf("failed to create project configuration: %w", err)
+		}
+		cmd.Printf("✅ Created project configuration: %s\n", projectConfigPath)
+	} else {
+		cmd.Printf("ℹ️  Project configuration already exists: %s\n", projectConfigPath)
+	}
+
+	// Check for .gitignore and offer to add .cw/ to it
+	gitignorePath := filepath.Join(repoInfo.Path, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err == nil {
+		// .gitignore exists, check if .cw/ is already in it
+		content, err := os.ReadFile(gitignorePath)
+		if err != nil {
+			return fmt.Errorf("failed to read .gitignore: %w", err)
+		}
+
+		if !containsLine(string(content), ".cw/") {
+			cmd.Printf("📝 Found .gitignore file. Would you like to add .cw/ to it? (y/N): ")
+
+			// For now, we'll just inform the user. In a real implementation,
+			// you might want to use a proper prompt library
+			cmd.Printf("   To add .cw/ to .gitignore, run: echo '.cw/' >> .gitignore\n")
+		} else {
+			cmd.Printf("✅ .cw/ is already in .gitignore\n")
+		}
+	} else {
+		cmd.Printf("📝 No .gitignore found. Consider creating one and adding .cw/ to it.\n")
+	}
+
+	cmd.Printf("\n🎉 Project initialized successfully!\n")
+	cmd.Printf("   You can now use: cw workspace create <task-name>\n")
+	cmd.Printf("   Configuration: cw config show\n")
+
+	return nil
+}
+
+// containsLine checks if a string contains a specific line
+func containsLine(content, line string) bool {
+	lines := strings.Split(content, "\n")
+	for _, l := range lines {
+		if strings.TrimSpace(l) == strings.TrimSpace(line) {
+			return true
+		}
+	}
+	return false
 }
