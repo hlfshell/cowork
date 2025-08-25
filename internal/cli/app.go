@@ -41,11 +41,18 @@ func NewApp(version, buildDate, gitCommit string) *App {
 		taskManager = nil
 	}
 
+	// Initialize workspace manager
+	workspaceManager, err := workspace.NewManager(300)
+	if err != nil {
+		fmt.Printf("Warning: failed to initialize workspace manager: %v\n", err)
+		workspaceManager = nil
+	}
+
 	app := &App{
 		version:          version,
 		buildDate:        buildDate,
 		gitCommit:        gitCommit,
-		workspaceManager: nil, // No longer needed - tasks handle workspaces
+		workspaceManager: workspaceManager,
 		taskManager:      taskManager,
 	}
 
@@ -110,6 +117,9 @@ For more information, visit: https://github.com/hlfshell/cowork`,
 
 	// Add task commands (which now handle workspaces)
 	app.addTaskCommands()
+
+	// Add workspace commands
+	app.addWorkspaceCommands()
 
 	// Add ticket commands (placeholder for future implementation)
 	app.addTicketCommands()
