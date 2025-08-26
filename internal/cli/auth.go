@@ -62,6 +62,7 @@ func newAuthGitCommand(app *App) *cobra.Command {
 			return app.configureSSH(cmd)
 		},
 	}
+	sshCmd.Flags().String("key", "", "Path to SSH private key file")
 
 	// HTTPS token configuration
 	httpsCmd := &cobra.Command{
@@ -151,14 +152,31 @@ func newAuthProviderCommand(app *App) *cobra.Command {
 	providerCmd := &cobra.Command{
 		Use:   "provider",
 		Short: "Manage Git provider authentication",
-		Long:  "Configure OAuth and API key authentication for GitHub, GitLab, and Bitbucket",
+		Long:  "Configure OAuth and API key authentication for GitHub, GitLab, and Bitbucket\n\nUse 'cw auth provider login <provider>' to see detailed authentication instructions.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.Printf("🔐 Git Provider Authentication\n")
+			cmd.Printf("=============================\n\n")
+			cmd.Printf("Available commands:\n")
+			cmd.Printf("  login    - Authenticate with a Git provider\n")
+			cmd.Printf("  logout   - Remove authentication for a Git provider\n")
+			cmd.Printf("  test     - Test authentication with a Git provider\n")
+			cmd.Printf("  list     - List configured provider authentications\n\n")
+			cmd.Printf("For detailed help on authentication:\n")
+			cmd.Printf("  cw auth provider login <provider>\n")
+			cmd.Printf("  Example: cw auth provider login github\n\n")
+			cmd.Printf("Supported providers:\n")
+			cmd.Printf("  • github    - GitHub.com and GitHub Enterprise\n")
+			cmd.Printf("  • gitlab    - GitLab.com and self-hosted GitLab\n")
+			cmd.Printf("  • bitbucket - Bitbucket.org and Bitbucket Server\n")
+			return nil
+		},
 	}
 
 	// Login command
 	loginCmd := &cobra.Command{
 		Use:   "login [provider]",
 		Short: "Login to a Git provider",
-		Long:  "Authenticate with a Git provider using OAuth or API key",
+		Long:  "Authenticate with a Git provider using OAuth or API key\n\nUse 'cw auth provider login <provider>' to see detailed help for a specific provider.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return app.loginProvider(cmd, args[0])
@@ -310,15 +328,24 @@ func (app *App) configureSSH(cmd *cobra.Command) error {
 	currentKeyPath := config.Auth.Git.SSH.KeyPath
 	currentUseAgent := config.Auth.Git.SSH.UseAgent
 
-	// Get SSH key path
-	cmd.Printf("SSH key path (current: %s): ", currentKeyPath)
-	keyPath, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("failed to read SSH key path: %w", err)
-	}
-	keyPath = strings.TrimSpace(keyPath)
-	if keyPath == "" {
-		keyPath = currentKeyPath
+	// Check if key path is provided via flag
+	flagKeyPath, _ := cmd.Flags().GetString("key")
+
+	var keyPath string
+	if flagKeyPath != "" {
+		keyPath = flagKeyPath
+		cmd.Printf("Using SSH key path from flag: %s\n", keyPath)
+	} else {
+		// Get SSH key path interactively
+		cmd.Printf("SSH key path (current: %s): ", currentKeyPath)
+		inputKeyPath, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read SSH key path: %w", err)
+		}
+		keyPath = strings.TrimSpace(inputKeyPath)
+		if keyPath == "" {
+			keyPath = currentKeyPath
+		}
 	}
 
 	// Expand ~ to home directory
@@ -784,9 +811,33 @@ func (app *App) showAuthConfig(cmd *cobra.Command) error {
 
 // loginProvider handles provider authentication
 func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
+	// Check if help is requested
+	if providerName == "help" || providerName == "--help" || providerName == "-h" {
+		cmd.Printf("🔐 Provider Authentication Help\n")
+		cmd.Printf("==============================\n\n")
+		cmd.Printf("Usage: cw auth provider login <provider> [flags]\n\n")
+		cmd.Printf("Supported providers:\n")
+		cmd.Printf("  • github    - GitHub.com and GitHub Enterprise\n")
+		cmd.Printf("  • gitlab    - GitLab.com and self-hosted GitLab\n")
+		cmd.Printf("  • bitbucket - Bitbucket.org and Bitbucket Server\n\n")
+		cmd.Printf("For detailed help on a specific provider:\n")
+		cmd.Printf("  cw auth provider login <provider>\n")
+		cmd.Printf("  Example: cw auth provider login github\n\n")
+		return nil
+	}
+
 	// Parse provider type
 	providerType, err := parseProviderType(providerName)
 	if err != nil {
+		// Show help for the specific provider if it's a valid name
+		if providerName == "github" || providerName == "gitlab" || providerName == "bitbucket" {
+			cmd.Printf("❌ %v\n\n", err)
+			if err := app.showProviderHelpFromMarkdown(cmd, providerName); err != nil {
+				cmd.Printf("❌ Failed to load help content for %s: %v\n", providerName, err)
+				cmd.Printf("Supported providers: github, gitlab, bitbucket\n")
+			}
+			return nil
+		}
 		return err
 	}
 
@@ -796,6 +847,19 @@ func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
 	token, _ := cmd.Flags().GetString("token")
 	username, _ := cmd.Flags().GetString("username")
 	password, _ := cmd.Flags().GetString("password")
+
+	// If no authentication credentials are provided, show help
+	if token == "" && username == "" && password == "" {
+		// Show the regular command help first
+		cmd.Help()
+		cmd.Printf("\n")
+		// Show provider-specific help from embedded markdown
+		if err := app.showProviderHelpFromMarkdown(cmd, providerName); err != nil {
+			cmd.Printf("❌ Failed to load help content for %s: %v\n", providerName, err)
+			cmd.Printf("Supported providers: github, gitlab, bitbucket\n")
+		}
+		return nil
+	}
 
 	// Parse scope
 	authScope, err := parseAuthScope(scope)
