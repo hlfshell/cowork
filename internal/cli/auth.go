@@ -9,7 +9,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/hlfshell/cowork/internal/auth"
 	"github.com/hlfshell/cowork/internal/config"
+	"github.com/hlfshell/cowork/internal/git"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -19,12 +21,13 @@ func (app *App) addAuthCommands() {
 	authCmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage authentication for various services",
-		Long:  "Configure authentication for Git, container registries, and other services",
+		Long:  "Configure authentication for Git providers, container registries, and other services",
 	}
 
 	// Git authentication subcommands
 	authCmd.AddCommand(
 		newAuthGitCommand(app),
+		newAuthProviderCommand(app),
 		newAuthContainerCommand(app),
 		newAuthShowCommand(app),
 	)
@@ -141,6 +144,74 @@ func newAuthContainerCommand(app *App) *cobra.Command {
 
 	containerCmd.AddCommand(addCmd, removeCmd, listCmd, testCmd)
 	return containerCmd
+}
+
+// newAuthProviderCommand creates the provider authentication command
+func newAuthProviderCommand(app *App) *cobra.Command {
+	providerCmd := &cobra.Command{
+		Use:   "provider",
+		Short: "Manage Git provider authentication",
+		Long:  "Configure OAuth and API key authentication for GitHub, GitLab, and Bitbucket",
+	}
+
+	// Login command
+	loginCmd := &cobra.Command{
+		Use:   "login [provider]",
+		Short: "Login to a Git provider",
+		Long:  "Authenticate with a Git provider using OAuth or API key",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.loginProvider(cmd, args[0])
+		},
+	}
+
+	// Add flags to login command
+	loginCmd.Flags().String("method", "token", "Authentication method (token, basic)")
+	loginCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+	loginCmd.Flags().String("token", "", "API token (for token method)")
+	loginCmd.Flags().String("username", "", "Username (for basic method)")
+	loginCmd.Flags().String("password", "", "Password (for basic method)")
+
+	// Logout command
+	logoutCmd := &cobra.Command{
+		Use:   "logout [provider]",
+		Short: "Logout from a Git provider",
+		Long:  "Remove authentication for a Git provider",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.logoutProvider(cmd, args[0])
+		},
+	}
+
+	// Add flags to logout command
+	logoutCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+
+	// Test command
+	testCmd := &cobra.Command{
+		Use:   "test [provider]",
+		Short: "Test provider authentication",
+		Long:  "Test authentication with a Git provider",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.testProviderAuth(cmd, args[0])
+		},
+	}
+
+	// Add flags to test command
+	testCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+
+	// List command
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List configured providers",
+		Long:  "Show all configured Git provider authentications",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.listProviderAuths(cmd)
+		},
+	}
+
+	providerCmd.AddCommand(loginCmd, logoutCmd, testCmd, listCmd)
+	return providerCmd
 }
 
 // newAuthShowCommand creates the show authentication command
@@ -678,12 +749,12 @@ func (app *App) showAuthConfig(cmd *cobra.Command) error {
 	cmd.Printf("   User Email: %s\n", config.Auth.Git.User.Email)
 	cmd.Printf("   Default Method: %s\n", config.Auth.Git.DefaultMethod)
 	cmd.Printf("   Credential Helper: %s\n", config.Auth.Git.CredentialHelper)
-	
+
 	cmd.Printf("   SSH:\n")
 	cmd.Printf("     Key Path: %s\n", config.Auth.Git.SSH.KeyPath)
 	cmd.Printf("     Use Agent: %t\n", config.Auth.Git.SSH.UseAgent)
 	cmd.Printf("     Strict Host Key Checking: %t\n", config.Auth.Git.SSH.StrictHostKeyChecking)
-	
+
 	cmd.Printf("   HTTPS:\n")
 	cmd.Printf("     Username: %s\n", config.Auth.Git.HTTPS.Username)
 	cmd.Printf("     Token Type: %s\n", config.Auth.Git.HTTPS.TokenType)
@@ -698,7 +769,7 @@ func (app *App) showAuthConfig(cmd *cobra.Command) error {
 	cmd.Printf("\n🐳 Container Authentication:\n")
 	cmd.Printf("   Default Registry: %s\n", config.Auth.Container.DefaultRegistry)
 	cmd.Printf("   Use Credential Helper: %t\n", config.Auth.Container.UseCredentialHelper)
-	
+
 	if config.Auth.Container.Registries != nil && len(config.Auth.Container.Registries) > 0 {
 		cmd.Printf("   Configured Registries:\n")
 		for name, registry := range config.Auth.Container.Registries {
@@ -709,4 +780,218 @@ func (app *App) showAuthConfig(cmd *cobra.Command) error {
 	}
 
 	return nil
+}
+
+// loginProvider handles provider authentication
+func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
+	// Parse provider type
+	providerType, err := parseProviderType(providerName)
+	if err != nil {
+		return err
+	}
+
+	// Get flags
+	method, _ := cmd.Flags().GetString("method")
+	scope, _ := cmd.Flags().GetString("scope")
+	token, _ := cmd.Flags().GetString("token")
+	username, _ := cmd.Flags().GetString("username")
+	password, _ := cmd.Flags().GetString("password")
+
+	// Parse scope
+	authScope, err := parseAuthScope(scope)
+	if err != nil {
+		return err
+	}
+
+	// Create auth manager
+	configManager := config.NewManager()
+	authManager, err := auth.NewManager(configManager)
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+
+	cmd.Printf("🔐 Authenticating with %s...\n", providerName)
+
+	switch method {
+
+	case "token":
+		// Token authentication
+		if token == "" {
+			return fmt.Errorf("token is required for token authentication method")
+		}
+		err := authManager.SetToken(providerType, token, authScope)
+		if err != nil {
+			return fmt.Errorf("failed to set token: %w", err)
+		}
+		cmd.Printf("✅ Successfully authenticated with %s using token\n", providerName)
+
+	case "basic":
+		// Basic authentication
+		if username == "" || password == "" {
+			return fmt.Errorf("username and password are required for basic authentication method")
+		}
+		err := authManager.SetBasicAuth(providerType, username, password, authScope)
+		if err != nil {
+			return fmt.Errorf("failed to set basic auth: %w", err)
+		}
+		cmd.Printf("✅ Successfully authenticated with %s using basic auth\n", providerName)
+
+	default:
+		return fmt.Errorf("unsupported authentication method: %s", method)
+	}
+
+	return nil
+}
+
+// logoutProvider removes provider authentication
+func (app *App) logoutProvider(cmd *cobra.Command, providerName string) error {
+	// Parse provider type
+	providerType, err := parseProviderType(providerName)
+	if err != nil {
+		return err
+	}
+
+	// Get scope
+	scope, _ := cmd.Flags().GetString("scope")
+	authScope, err := parseAuthScope(scope)
+	if err != nil {
+		return err
+	}
+
+	// Create auth manager
+	configManager := config.NewManager()
+	authManager, err := auth.NewManager(configManager)
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+
+	// Remove authentication
+	err = authManager.RemoveAuth(providerType, authScope)
+	if err != nil {
+		return fmt.Errorf("failed to remove authentication: %w", err)
+	}
+
+	cmd.Printf("✅ Successfully logged out from %s\n", providerName)
+	return nil
+}
+
+// testProviderAuth tests provider authentication
+func (app *App) testProviderAuth(cmd *cobra.Command, providerName string) error {
+	// Parse provider type
+	providerType, err := parseProviderType(providerName)
+	if err != nil {
+		return err
+	}
+
+	// Get scope
+	scope, _ := cmd.Flags().GetString("scope")
+	authScope, err := parseAuthScope(scope)
+	if err != nil {
+		return err
+	}
+
+	// Create auth manager
+	configManager := config.NewManager()
+	authManager, err := auth.NewManager(configManager)
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+
+	cmd.Printf("🧪 Testing authentication with %s...\n", providerName)
+
+	// Test authentication
+	err = authManager.TestAuth(cmd.Context(), providerType, authScope)
+	if err != nil {
+		return fmt.Errorf("authentication test failed: %w", err)
+	}
+
+	cmd.Printf("✅ Authentication test successful for %s\n", providerName)
+	return nil
+}
+
+// listProviderAuths lists all configured provider authentications
+func (app *App) listProviderAuths(cmd *cobra.Command) error {
+	// Create auth manager
+	configManager := config.NewManager()
+	authManager, err := auth.NewManager(configManager)
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+
+	// List configurations
+	configs, err := authManager.ListAuthConfigs()
+	if err != nil {
+		return fmt.Errorf("failed to list auth configs: %w", err)
+	}
+
+	cmd.Printf("🔐 Configured Git Provider Authentications\n")
+	cmd.Printf("==========================================\n\n")
+
+	if len(configs) == 0 {
+		cmd.Printf("No provider authentications configured.\n")
+		cmd.Printf("Use 'cw auth provider login <provider>' to configure authentication.\n")
+		return nil
+	}
+
+	// Group configs by scope
+	globalConfigs := make([]*auth.AuthConfig, 0)
+	projectConfigs := make([]*auth.AuthConfig, 0)
+
+	for _, config := range configs {
+		// For now, we'll show all configs as global since we don't store scope in the config
+		// In a real implementation, you'd need to store scope information
+		globalConfigs = append(globalConfigs, config)
+	}
+
+	// Show global configs
+	if len(globalConfigs) > 0 {
+		cmd.Printf("🌍 Global Authentications:\n")
+		for _, authConfig := range globalConfigs {
+			cmd.Printf("   %s: %s\n", authConfig.ProviderType, authConfig.AuthMethod)
+			if authConfig.ExpiresAt != nil {
+				cmd.Printf("     Expires: %s\n", authConfig.ExpiresAt.Format("2006-01-02 15:04:05"))
+			}
+		}
+		cmd.Printf("\n")
+	}
+
+	// Show project configs
+	if len(projectConfigs) > 0 {
+		cmd.Printf("📁 Project Authentications:\n")
+		for _, authConfig := range projectConfigs {
+			cmd.Printf("   %s: %s\n", authConfig.ProviderType, authConfig.AuthMethod)
+			if authConfig.ExpiresAt != nil {
+				cmd.Printf("     Expires: %s\n", authConfig.ExpiresAt.Format("2006-01-02 15:04:05"))
+			}
+		}
+		cmd.Printf("\n")
+	}
+
+	return nil
+}
+
+// parseProviderType parses a provider name string into a ProviderType
+func parseProviderType(providerName string) (git.ProviderType, error) {
+	switch strings.ToLower(providerName) {
+	case "github":
+		return git.ProviderGitHub, nil
+	case "gitlab":
+		return git.ProviderGitLab, nil
+	case "bitbucket":
+		return git.ProviderBitbucket, nil
+	default:
+		return "", fmt.Errorf("unsupported provider: %s (supported: github, gitlab, bitbucket)", providerName)
+	}
+}
+
+// parseAuthScope parses a scope string into an AuthScope
+func parseAuthScope(scope string) (auth.AuthScope, error) {
+	switch strings.ToLower(scope) {
+	case "global":
+		return auth.AuthScopeGlobal, nil
+	case "project":
+		return auth.AuthScopeProject, nil
+	default:
+		return "", fmt.Errorf("unsupported scope: %s (supported: global, project)", scope)
+	}
 }
