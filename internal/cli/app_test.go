@@ -71,14 +71,14 @@ func TestNewApp_WithEmptyVersionInfo(t *testing.T) {
 // TestApp_CommandStructure tests that all expected commands are properly added to the application
 func TestApp_CommandStructure(t *testing.T) {
 	// Test case: The application should have all the expected top-level commands
-	// including version, workspace, ticket, and agent commands
+	// including version, init, config, task, and go commands
 	app := NewApp("1.0.0", "2024-01-01", "test")
 
 	// Get all subcommands
 	commands := app.rootCmd.Commands()
 
 	// Define expected command names
-	expectedCommands := []string{"version", "workspace", "ticket", "agent"}
+	expectedCommands := []string{"version", "init", "config", "task", "go"}
 
 	// Create a map of found commands for easy lookup
 	foundCommands := make(map[string]bool)
@@ -136,131 +136,92 @@ func TestApp_VersionCommand(t *testing.T) {
 	}
 }
 
-// TestApp_WorkspaceCommands tests that workspace commands are properly structured
-func TestApp_WorkspaceCommands(t *testing.T) {
-	// Test case: The workspace command should have the expected subcommands
-	// including create and list commands
+// TestApp_TaskCommands tests that task commands are properly structured
+func TestApp_TaskCommands(t *testing.T) {
+	// Test case: The task command should have the expected subcommands
+	// including list, sync, describe, priority, start, stop, kill, and logs commands
 	app := NewApp("1.0.0", "2024-01-01", "test")
 
-	// Find the workspace command
-	var workspaceCmd *cobra.Command
+	// Find the task command
+	var taskCmd *cobra.Command
 	for _, cmd := range app.rootCmd.Commands() {
-		if cmd.Name() == "workspace" {
-			workspaceCmd = cmd
+		if cmd.Name() == "task" {
+			taskCmd = cmd
 			break
 		}
 	}
 
-	if workspaceCmd == nil {
-		t.Fatal("Workspace command not found")
+	if taskCmd == nil {
+		t.Fatal("Task command not found")
 	}
 
-	// Verify workspace command has the correct short description
-	expectedShort := "Manage isolated workspaces"
-	if workspaceCmd.Short != expectedShort {
-		t.Errorf("Expected workspace command short description '%s', got '%s'", expectedShort, workspaceCmd.Short)
+	// Verify task command has the correct short description
+	expectedShort := "Manage tasks and their workspaces"
+	if taskCmd.Short != expectedShort {
+		t.Errorf("Expected task command short description '%s', got '%s'", expectedShort, taskCmd.Short)
 	}
 
-	// Get workspace subcommands
-	workspaceSubcommands := workspaceCmd.Commands()
+	// Get task subcommands
+	taskSubcommands := taskCmd.Commands()
 
 	// Define expected subcommand names
-	expectedSubcommands := []string{"create", "list"}
+	expectedSubcommands := []string{"list", "sync", "describe", "priority", "start", "stop", "kill", "logs"}
 
 	// Create a map of found subcommands for easy lookup
 	foundSubcommands := make(map[string]bool)
-	for _, cmd := range workspaceSubcommands {
+	for _, cmd := range taskSubcommands {
 		foundSubcommands[cmd.Name()] = true
 	}
 
 	// Verify all expected subcommands are present
 	for _, expectedSubcmd := range expectedSubcommands {
 		if !foundSubcommands[expectedSubcmd] {
-			t.Errorf("Expected workspace subcommand '%s' not found", expectedSubcmd)
+			t.Errorf("Expected task subcommand '%s' not found", expectedSubcmd)
 		}
 	}
 }
 
-// TestApp_TicketCommands tests that ticket commands are properly structured
-func TestApp_TicketCommands(t *testing.T) {
-	// Test case: The ticket command should have the expected subcommands
-	// including create command
+// TestApp_ConfigCommands tests that config commands are properly structured
+func TestApp_ConfigCommands(t *testing.T) {
+	// Test case: The config command should have the expected subcommands
+	// including show, auth, agent, env, save, and load commands
 	app := NewApp("1.0.0", "2024-01-01", "test")
 
-	// Find the ticket command
-	var ticketCmd *cobra.Command
+	// Find the config command
+	var configCmd *cobra.Command
 	for _, cmd := range app.rootCmd.Commands() {
-		if cmd.Name() == "ticket" {
-			ticketCmd = cmd
+		if cmd.Name() == "config" {
+			configCmd = cmd
 			break
 		}
 	}
 
-	if ticketCmd == nil {
-		t.Fatal("Ticket command not found")
+	if configCmd == nil {
+		t.Fatal("Config command not found")
 	}
 
-	// Verify ticket command has the correct short description
-	expectedShort := "Manage tickets and create workspaces from them"
-	if ticketCmd.Short != expectedShort {
-		t.Errorf("Expected ticket command short description '%s', got '%s'", expectedShort, ticketCmd.Short)
+	// Verify config command has the correct short description
+	expectedShort := "Manage configuration settings"
+	if configCmd.Short != expectedShort {
+		t.Errorf("Expected config command short description '%s', got '%s'", expectedShort, configCmd.Short)
 	}
 
-	// Get ticket subcommands
-	ticketSubcommands := ticketCmd.Commands()
+	// Get config subcommands
+	configSubcommands := configCmd.Commands()
 
-	// Verify create subcommand is present
-	foundCreate := false
-	for _, cmd := range ticketSubcommands {
-		if cmd.Name() == "create" {
-			foundCreate = true
-			break
+	// Define expected subcommand names
+	expectedSubcommands := []string{"show", "auth", "agent", "env", "save", "load"}
+
+	// Create a map of found subcommands for easy lookup
+	foundSubcommands := make(map[string]bool)
+	for _, cmd := range configSubcommands {
+		foundSubcommands[cmd.Name()] = true
+	}
+
+	// Verify all expected subcommands are present
+	for _, expectedSubcmd := range expectedSubcommands {
+		if !foundSubcommands[expectedSubcmd] {
+			t.Errorf("Expected config subcommand '%s' not found", expectedSubcmd)
 		}
-	}
-
-	if !foundCreate {
-		t.Error("Expected ticket subcommand 'create' not found")
-	}
-}
-
-// TestApp_AgentCommands tests that agent commands are properly structured
-func TestApp_AgentCommands(t *testing.T) {
-	// Test case: The agent command should have the expected subcommands
-	// including run command
-	app := NewApp("1.0.0", "2024-01-01", "test")
-
-	// Find the agent command
-	var agentCmd *cobra.Command
-	for _, cmd := range app.rootCmd.Commands() {
-		if cmd.Name() == "agent" {
-			agentCmd = cmd
-			break
-		}
-	}
-
-	if agentCmd == nil {
-		t.Fatal("Agent command not found")
-	}
-
-	// Verify agent command has the correct short description
-	expectedShort := "Manage AI agents"
-	if agentCmd.Short != expectedShort {
-		t.Errorf("Expected agent command short description '%s', got '%s'", expectedShort, agentCmd.Short)
-	}
-
-	// Get agent subcommands
-	agentSubcommands := agentCmd.Commands()
-
-	// Verify run subcommand is present
-	foundRun := false
-	for _, cmd := range agentSubcommands {
-		if cmd.Name() == "run" {
-			foundRun = true
-			break
-		}
-	}
-
-	if !foundRun {
-		t.Error("Expected agent subcommand 'run' not found")
 	}
 }
