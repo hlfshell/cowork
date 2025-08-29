@@ -124,8 +124,6 @@ type Repository struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-
-
 // Issue represents an issue in a repository
 type Issue struct {
 	// Issue number
@@ -380,4 +378,86 @@ type UpdatePullRequestRequest struct {
 type CreateCommentRequest struct {
 	// Comment body
 	Body string `json:"body"`
+}
+
+// CoworkProvider defines the interface for Git provider operations that integrate with the cowork task system
+// This interface extends GitProvider with task-specific operations and workflow management
+type CoworkProvider interface {
+	// Embed the base GitProvider interface
+	GitProvider
+
+	// Issue and Task Management
+	// ScanOpenIssues scans all open issues assigned to the current user
+	// Returns issues that should be converted to tasks
+	ScanOpenIssues(ctx context.Context, owner, repo string) ([]*Issue, error)
+
+	// CreateTaskFromIssue creates a new task from a provider issue
+	// Returns the created task and any error encountered
+	CreateTaskFromIssue(ctx context.Context, owner, repo string, issue *Issue) (*types.Task, error)
+
+	// GetTaskByIssue retrieves a task that was created from a specific issue
+	// Returns nil if no task exists for the issue
+	GetTaskByIssue(ctx context.Context, owner, repo string, issueNumber int) (*types.Task, error)
+
+	// Workspace Management
+	// CreateWorkspaceForTask creates a workspace for a task when it starts
+	// This should create a branch based on the issue and set up the workspace
+	CreateWorkspaceForTask(ctx context.Context, task *types.Task, owner, repo string) (*types.Workspace, error)
+
+	// GenerateBranchName generates a branch name for a task based on the issue
+	// This should follow provider-specific naming conventions
+	GenerateBranchName(issue *Issue) string
+
+	// Pull Request Management
+	// CreatePullRequestForTask creates a pull request for a completed task
+	// If a PR already exists, it should be updated instead
+	CreatePullRequestForTask(ctx context.Context, task *types.Task, owner, repo string, workspace *types.Workspace) (*PullRequest, error)
+
+	// GetPullRequestForTask retrieves the pull request associated with a task
+	// Returns nil if no PR exists for the task
+	GetPullRequestForTask(ctx context.Context, task *types.Task, owner, repo string) (*PullRequest, error)
+
+	// LinkPullRequestToIssue links a pull request to the original issue
+	// This should add appropriate comments and references
+	LinkPullRequestToIssue(ctx context.Context, owner, repo string, pr *PullRequest, issue *Issue) error
+
+	// PR Monitoring and Updates
+	// ScanPullRequestsForTasks scans pull requests associated with known tasks
+	// Returns PRs that need attention (reviews, comments, etc.)
+	ScanPullRequestsForTasks(ctx context.Context, owner, repo string, knownTaskIDs []string) ([]*PullRequest, error)
+
+	// GetPullRequestUpdates retrieves recent updates for a pull request
+	// This includes new comments, reviews, status changes, etc.
+	GetPullRequestUpdates(ctx context.Context, owner, repo string, prNumber int, since time.Time) (*PullRequestUpdate, error)
+
+	// UpdateTaskFromPullRequest updates a task based on pull request changes
+	// This should handle new comments, review requests, etc.
+	UpdateTaskFromPullRequest(ctx context.Context, task *types.Task, pr *PullRequest, updates *PullRequestUpdate) error
+
+	// Task Status Synchronization
+	// SyncTaskStatusToProvider updates the provider (issue/PR) with task status changes
+	// This should update issue labels, PR status, etc.
+	SyncTaskStatusToProvider(ctx context.Context, task *types.Task, owner, repo string) error
+
+	// GetProviderMetadata retrieves provider-specific metadata for a task
+	// This includes issue labels, PR status, review information, etc.
+	GetProviderMetadata(ctx context.Context, task *types.Task, owner, repo string) (map[string]interface{}, error)
+}
+
+// PullRequestUpdate represents updates to a pull request
+type PullRequestUpdate struct {
+	// Pull request number
+	PRNumber int `json:"pr_number"`
+
+	// New comments since last check
+	NewComments []*Comment `json:"new_comments"`
+
+	// New reviews since last check
+	NewReviews []*Review `json:"new_reviews"`
+
+	// Status changes (mergeable, draft, etc.)
+	StatusChanges map[string]interface{} `json:"status_changes"`
+
+	// Last update time
+	UpdatedAt time.Time `json:"updated_at"`
 }

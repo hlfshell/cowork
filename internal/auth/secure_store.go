@@ -61,7 +61,7 @@ func (s *SecureStore) Set(key string, config *AuthConfig) error {
 // Get retrieves an authentication configuration
 func (s *SecureStore) Get(key string) (*AuthConfig, error) {
 	filePath := filepath.Join(s.storePath, s.sanitizeKey(key)+".enc")
-	
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -102,18 +102,40 @@ func (s *SecureStore) List(prefix string) ([]*AuthConfig, error) {
 			continue
 		}
 
-		key := strings.TrimSuffix(entry.Name(), ".enc")
-		if !strings.HasPrefix(key, s.sanitizeKey(prefix)) {
+		// Extract the original key from the sanitized filename
+		sanitizedKey := strings.TrimSuffix(entry.Name(), ".enc")
+
+		if !strings.HasPrefix(sanitizedKey, s.sanitizeKey(prefix)) {
 			continue
 		}
 
-		config, err := s.Get(key)
+		// Read the file directly and decrypt it
+		filePath := filepath.Join(s.storePath, entry.Name())
+		data, err := os.ReadFile(filePath)
 		if err != nil {
 			// Skip invalid entries
 			continue
 		}
 
-		configs = append(configs, config)
+		decrypted, err := s.decrypt(data)
+		if err != nil {
+			// Skip invalid entries
+			continue
+		}
+
+		var config AuthConfig
+		if err := json.Unmarshal(decrypted, &config); err != nil {
+			// Skip invalid entries
+			continue
+		}
+
+		// Only include configs that have valid provider types
+		if config.ProviderType == "" {
+			// Skip invalid entries
+			continue
+		}
+
+		configs = append(configs, &config)
 	}
 
 	return configs, nil

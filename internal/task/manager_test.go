@@ -159,7 +159,7 @@ func TestGetTask_WithValidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Retrieve the task
-	retrievedTask, err := manager.GetTask(createdTask.ID)
+	retrievedTask, err := manager.GetTask(fmt.Sprintf("%d", createdTask.ID))
 
 	assert.NoError(t, err)
 	assert.NotNil(t, retrievedTask)
@@ -274,16 +274,16 @@ func TestDeleteTask_WithValidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify task exists
-	_, err = manager.GetTask(task.ID)
+	_, err = manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 
 	// Delete the task
-	err = manager.DeleteTask(task.ID)
+	err = manager.DeleteTask(fmt.Sprintf("%d", task.ID))
 
 	assert.NoError(t, err)
 
 	// Verify task no longer exists
-	_, err = manager.GetTask(task.ID)
+	_, err = manager.GetTask(fmt.Sprintf("%d", task.ID))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "task not found")
 }
@@ -318,12 +318,12 @@ func TestCompleteTask_WithValidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Complete the task
-	err = manager.CompleteTask(task.ID)
+	err = manager.CompleteTask(fmt.Sprintf("%d", task.ID))
 
 	assert.NoError(t, err)
 
 	// Verify task status changed
-	completedTask, err := manager.GetTask(task.ID)
+	completedTask, err := manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 	assert.Equal(t, types.TaskStatusCompleted, completedTask.Status)
 	assert.NotZero(t, completedTask.CompletedAt)
@@ -346,12 +346,12 @@ func TestFailTask_WithValidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Fail the task
-	err = manager.FailTask(task.ID, "Test failure")
+	err = manager.FailTask(fmt.Sprintf("%d", task.ID), "Test failure")
 
 	assert.NoError(t, err)
 
 	// Verify task status changed
-	failedTask, err := manager.GetTask(task.ID)
+	failedTask, err := manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 	assert.Equal(t, types.TaskStatusFailed, failedTask.Status)
 	assert.NotZero(t, failedTask.CompletedAt)
@@ -374,12 +374,12 @@ func TestCancelTask_WithValidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Cancel the task
-	err = manager.CancelTask(task.ID)
+	err = manager.CancelTask(fmt.Sprintf("%d", task.ID))
 
 	assert.NoError(t, err)
 
 	// Verify task status changed
-	cancelledTask, err := manager.GetTask(task.ID)
+	cancelledTask, err := manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 	assert.Equal(t, types.TaskStatusCancelled, cancelledTask.Status)
 	assert.NotZero(t, cancelledTask.CompletedAt)
@@ -402,20 +402,20 @@ func TestPauseAndResumeTask(t *testing.T) {
 	require.NoError(t, err)
 
 	// Pause the task
-	err = manager.PauseTask(task.ID)
+	err = manager.PauseTask(fmt.Sprintf("%d", task.ID))
 	assert.NoError(t, err)
 
 	// Verify task is paused
-	pausedTask, err := manager.GetTask(task.ID)
+	pausedTask, err := manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 	assert.Equal(t, types.TaskStatusPaused, pausedTask.Status)
 
 	// Resume the task
-	err = manager.ResumeTask(task.ID)
+	err = manager.ResumeTask(fmt.Sprintf("%d", task.ID))
 	assert.NoError(t, err)
 
 	// Verify task is resumed (should be back to queued)
-	resumedTask, err := manager.GetTask(task.ID)
+	resumedTask, err := manager.GetTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 	assert.Equal(t, types.TaskStatusQueued, resumedTask.Status)
 }
@@ -470,7 +470,7 @@ func TestGetNextQueuedTask_WithNoQueuedTasks(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = manager.CompleteTask(task.ID)
+	err = manager.CompleteTask(fmt.Sprintf("%d", task.ID))
 	require.NoError(t, err)
 
 	// Try to get next queued task
@@ -503,7 +503,7 @@ func TestTaskPersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify task exists in second manager
-	retrievedTask, err := manager2.GetTask(task.ID)
+	retrievedTask, err := manager2.GetTask(fmt.Sprintf("%d", task.ID))
 	assert.NoError(t, err)
 	assert.Equal(t, task.ID, retrievedTask.ID)
 	assert.Equal(t, task.Name, retrievedTask.Name)

@@ -23,7 +23,7 @@ func TestSaveWorkspaceMetadata_WithValidWorkspace(t *testing.T) {
 	}
 
 	workspace := &types.Workspace{
-		ID:           "test-id",
+		ID:           1,
 		TaskName:     "test-task",
 		Description:  "Test task description",
 		TicketID:     "123",
@@ -59,8 +59,8 @@ func TestSaveWorkspaceMetadata_WithValidWorkspace(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, workspace.ID) {
-		t.Errorf("Metadata file should contain workspace ID: %s", workspace.ID)
+	if !strings.Contains(contentStr, fmt.Sprintf("%d", workspace.ID)) {
+		t.Errorf("Metadata file should contain workspace ID: %d", workspace.ID)
 	}
 
 	if !strings.Contains(contentStr, workspace.TaskName) {
@@ -82,7 +82,7 @@ func TestSaveWorkspaceMetadata_WithNonExistentDirectory(t *testing.T) {
 	nonExistentPath := "/path/that/does/not/exist"
 
 	workspace := &types.Workspace{
-		ID:       "test-id",
+		ID:       2,
 		TaskName: "test-task",
 	}
 
@@ -110,7 +110,7 @@ func TestLoadWorkspaceMetadata_WithValidFile(t *testing.T) {
 
 	// Create a test workspace
 	originalWorkspace := &types.Workspace{
-		ID:           "test-id",
+		ID:           3,
 		TaskName:     "test-task",
 		Description:  "Test task description",
 		TicketID:     "123",
@@ -146,7 +146,7 @@ func TestLoadWorkspaceMetadata_WithValidFile(t *testing.T) {
 
 	// Verify all fields were loaded correctly
 	if loadedWorkspace.ID != originalWorkspace.ID {
-		t.Errorf("Expected ID '%s', got '%s'", originalWorkspace.ID, loadedWorkspace.ID)
+		t.Errorf("Expected ID %d, got %d", originalWorkspace.ID, loadedWorkspace.ID)
 	}
 
 	if loadedWorkspace.TaskName != originalWorkspace.TaskName {
@@ -286,7 +286,7 @@ func TestDiscoverWorkspaces_WithMultipleWorkspaces(t *testing.T) {
 
 		// Create workspace with metadata
 		workspace := &types.Workspace{
-			ID:           workspaceID,
+			ID:           i + 1,
 			TaskName:     fmt.Sprintf("task-%d", i+1),
 			Description:  fmt.Sprintf("Description for task %d", i+1),
 			Path:         workspacePath,
@@ -318,13 +318,13 @@ func TestDiscoverWorkspaces_WithMultipleWorkspaces(t *testing.T) {
 	}
 
 	// Verify all expected workspaces were discovered
-	foundWorkspaces := make(map[string]bool)
+	foundWorkspaces := make(map[int]bool)
 	for _, workspace := range discoveredWorkspaces {
 		foundWorkspaces[workspace.ID] = true
 	}
 
-	for _, workspaceID := range workspaceIDs {
-		if !foundWorkspaces[workspaceID] {
+	for i, workspaceID := range workspaceIDs {
+		if !foundWorkspaces[i+1] {
 			t.Errorf("Expected workspace '%s' not found in discovered workspaces", workspaceID)
 		}
 	}
@@ -355,7 +355,7 @@ func TestDiscoverWorkspaces_WithInvalidMetadata(t *testing.T) {
 	}
 
 	validWorkspace := &types.Workspace{
-		ID:       "valid-id",
+		ID:       999,
 		TaskName: "valid-task",
 		Path:     validWorkspacePath,
 		Status:   types.WorkspaceStatusReady,
@@ -377,8 +377,8 @@ func TestDiscoverWorkspaces_WithInvalidMetadata(t *testing.T) {
 		t.Errorf("Expected 1 workspace, got %d", len(discoveredWorkspaces))
 	}
 
-	if discoveredWorkspaces[0].ID != "valid-id" {
-		t.Errorf("Expected workspace ID 'valid-id', got '%s'", discoveredWorkspaces[0].ID)
+	if discoveredWorkspaces[0].ID != 999 {
+		t.Errorf("Expected workspace ID 999, got %d", discoveredWorkspaces[0].ID)
 	}
 }
 
@@ -395,7 +395,7 @@ func TestUpdateWorkspaceMetadata_WithValidWorkspace(t *testing.T) {
 
 	// Create initial workspace
 	workspace := &types.Workspace{
-		ID:       "test-id",
+		ID:       1,
 		TaskName: "test-task",
 		Path:     workspacePath,
 		Status:   types.WorkspaceStatusReady,

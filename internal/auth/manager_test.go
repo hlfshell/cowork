@@ -366,8 +366,14 @@ func TestAuthManagerIntegration(t *testing.T) {
 	authManager, err := NewManager(configManager)
 	require.NoError(t, err)
 
-	// Clean up any existing configs
-	authManager.RemoveAuth(git.ProviderGitHub, AuthScopeGlobal)
+	// Clean up any existing configs by listing and removing all
+	existingConfigs, err := authManager.ListAuthConfigs()
+	require.NoError(t, err)
+	for _, cfg := range existingConfigs {
+		// Try to remove with both scopes since we don't know which scope it was stored with
+		authManager.RemoveAuth(cfg.ProviderType, AuthScopeGlobal)
+		authManager.RemoveAuth(cfg.ProviderType, AuthScopeProject)
+	}
 
 	// Test full workflow
 	// 1. Set token

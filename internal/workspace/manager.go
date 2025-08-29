@@ -1,14 +1,15 @@
 package workspace
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/hlfshell/cowork/internal/container"
 	"github.com/hlfshell/cowork/internal/git"
 	"github.com/hlfshell/cowork/internal/types"
 )
@@ -23,6 +24,9 @@ type Manager struct {
 
 	// Mutex for thread-safe operations
 	mu sync.RWMutex
+
+	// Container manager for workspace containers
+	containerManager container.ContainerManager
 }
 
 // NewManager creates a new workspace manager for the current project
@@ -39,9 +43,18 @@ func NewManager(gitTimeoutSeconds int) (*Manager, error) {
 		return nil, fmt.Errorf("failed to create project workspace directory: %w", err)
 	}
 
+	// Detect and initialize container manager
+	containerManager, err := container.DetectEngine()
+	if err != nil {
+		// Container engine not available, but we can still create workspaces without containers
+		fmt.Printf("Warning: No container engine detected: %v\n", err)
+		containerManager = nil
+	}
+
 	return &Manager{
-		gitOps:  git.NewGitOperations(gitTimeoutSeconds),
-		baseDir: projectDir,
+		gitOps:           git.NewGitOperations(gitTimeoutSeconds),
+		containerManager: containerManager,
+		baseDir:          projectDir,
 	}, nil
 }
 
@@ -65,27 +78,42 @@ func (m *Manager) CreateWorkspace(req *types.CreateWorkspaceRequest) (*types.Wor
 	}
 
 	// Generate a unique workspace ID
-	workspaceID, err := m.generateWorkspaceID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate workspace ID: %w", err)
+	// If this is a task-created workspace, use the same ID as the task
+	var workspaceID int
+	var taskID int
+	var isTaskWorkspace bool
+
+	if req.TaskID > 0 {
+		// Task-created workspace: use the same ID as the task
+		workspaceID = types.GenerateWorkspaceID(req.TaskID)
+		taskID = req.TaskID
+		isTaskWorkspace = true
+	} else {
+		// Standalone workspace: generate a new ID
+		workspaceID = types.GenerateWorkspaceID()
+		taskID = 0
+		isTaskWorkspace = false
 	}
 
-	// Create the workspace path
-	workspacePath := filepath.Join(m.baseDir, workspaceID)
+	// Create the workspace path (convert integer ID to string for directory name)
+	workspacePath := filepath.Join(m.baseDir, fmt.Sprintf("%d", workspaceID))
 
 	// Create the workspace object
 	workspace := &types.Workspace{
-		ID:           workspaceID,
-		TaskName:     req.TaskName,
-		Description:  req.Description,
-		TicketID:     req.TicketID,
-		Path:         workspacePath,
-		SourceRepo:   req.SourceRepo,
-		BaseBranch:   req.BaseBranch,
-		CreatedAt:    time.Now(),
-		LastActivity: time.Now(),
-		Status:       types.WorkspaceStatusCreating,
-		Metadata:     req.Metadata,
+		ID:              workspaceID,
+		TaskName:        req.TaskName,
+		Description:     req.Description,
+		TicketID:        req.TicketID,
+		Path:            workspacePath,
+		SourceRepo:      req.SourceRepo,
+		BaseBranch:      req.BaseBranch,
+		CreatedAt:       time.Now(),
+		LastActivity:    time.Now(),
+		Status:          types.WorkspaceStatusCreating,
+		Metadata:        req.Metadata,
+		TaskID:          taskID,
+		IsTaskWorkspace: isTaskWorkspace,
+		ContainerConfig: req.ContainerConfig,
 	}
 
 	// Clone the repository
@@ -118,12 +146,12 @@ func (m *Manager) CreateWorkspace(req *types.CreateWorkspaceRequest) (*types.Wor
 }
 
 // GetWorkspace retrieves a workspace by ID
-func (m *Manager) GetWorkspace(workspaceID string) (*types.Workspace, error) {
-	workspacePath := filepath.Join(m.baseDir, workspaceID)
+func (m *Manager) GetWorkspace(workspaceID int) (*types.Workspace, error) {
+	workspacePath := filepath.Join(m.baseDir, fmt.Sprintf("%d", workspaceID))
 
 	// Check if the workspace directory exists
 	if _, err := os.Stat(workspacePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+		return nil, fmt.Errorf("workspace not found: %d", workspaceID)
 	}
 
 	// Load workspace metadata
@@ -141,12 +169,12 @@ func (m *Manager) ListWorkspaces() ([]*types.Workspace, error) {
 }
 
 // DeleteWorkspace removes a workspace and cleans up its resources
-func (m *Manager) DeleteWorkspace(workspaceID string) error {
-	workspacePath := filepath.Join(m.baseDir, workspaceID)
+func (m *Manager) DeleteWorkspace(workspaceID int) error {
+	workspacePath := filepath.Join(m.baseDir, fmt.Sprintf("%d", workspaceID))
 
 	// Check if the workspace directory exists
 	if _, err := os.Stat(workspacePath); os.IsNotExist(err) {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
+		return fmt.Errorf("workspace not found: %d", workspaceID)
 	}
 
 	// Load workspace metadata to get the path
@@ -162,6 +190,21 @@ func (m *Manager) DeleteWorkspace(workspaceID string) error {
 		fmt.Printf("Warning: failed to update workspace status: %v\n", err)
 	}
 
+	// Stop and remove container if it exists
+	if workspace.ContainerID != "" && m.containerManager != nil {
+		ctx := context.Background()
+
+		// Stop the container
+		if err := m.containerManager.Stop(ctx, workspace.ContainerID, 30); err != nil {
+			fmt.Printf("Warning: failed to stop container %s: %v\n", workspace.ContainerID, err)
+		}
+
+		// Remove the container
+		if err := m.containerManager.Remove(ctx, workspace.ContainerID, true); err != nil {
+			fmt.Printf("Warning: failed to remove container %s: %v\n", workspace.ContainerID, err)
+		}
+	}
+
 	// Remove the workspace directory
 	if err := os.RemoveAll(workspace.Path); err != nil {
 		return fmt.Errorf("failed to remove workspace directory: %w", err)
@@ -171,16 +214,16 @@ func (m *Manager) DeleteWorkspace(workspaceID string) error {
 }
 
 // UpdateWorkspaceStatus updates the status of a workspace
-func (m *Manager) UpdateWorkspaceStatus(workspaceID string, status types.WorkspaceStatus) error {
+func (m *Manager) UpdateWorkspaceStatus(workspaceID int, status types.WorkspaceStatus) error {
 	if !status.IsValid() {
 		return fmt.Errorf("invalid workspace status: %s", status)
 	}
 
-	workspacePath := filepath.Join(m.baseDir, workspaceID)
+	workspacePath := filepath.Join(m.baseDir, fmt.Sprintf("%d", workspaceID))
 
 	// Check if the workspace directory exists
 	if _, err := os.Stat(workspacePath); os.IsNotExist(err) {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
+		return fmt.Errorf("workspace not found: %d", workspaceID)
 	}
 
 	// Load workspace metadata
@@ -211,18 +254,6 @@ func (m *Manager) GetWorkspaceByTaskName(taskName string) (*types.Workspace, err
 	}
 
 	return nil, fmt.Errorf("workspace not found with task name: %s", taskName)
-}
-
-// generateWorkspaceID creates a unique workspace identifier
-func (m *Manager) generateWorkspaceID() (string, error) {
-	// Generate 8 random bytes
-	bytes := make([]byte, 8)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-
-	// Convert to hex string
-	return hex.EncodeToString(bytes), nil
 }
 
 // GetBaseDirectory returns the base directory for workspaces
@@ -260,4 +291,249 @@ func (m *Manager) CleanupOrphanedWorkspaces() error {
 	}
 
 	return nil
+}
+
+// StartContainer starts the container associated with a workspace
+func (m *Manager) StartContainer(ctx context.Context, workspaceID int) error {
+	if m.containerManager == nil {
+		return fmt.Errorf("no container engine available")
+	}
+
+	// Get the workspace
+	workspace, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// Check if workspace has container configuration
+	if workspace.ContainerConfig == nil {
+		return fmt.Errorf("workspace does not have container configuration")
+	}
+
+	// Check if container is already running
+	if workspace.ContainerID != "" {
+		// Check if container is actually running
+		containerInfo, err := m.containerManager.Inspect(ctx, workspace.ContainerID)
+		if err == nil && containerInfo.Status == "running" {
+			return fmt.Errorf("container is already running")
+		}
+	}
+
+	// Prepare container run options
+	runOptions := container.RunOptions{
+		Image:       workspace.ContainerConfig.Image,
+		Name:        workspace.ContainerConfig.Name,
+		Command:     workspace.ContainerConfig.Command,
+		Args:        workspace.ContainerConfig.Args,
+		WorkingDir:  workspace.ContainerConfig.WorkingDir,
+		Environment: workspace.ContainerConfig.Environment,
+		Ports:       workspace.ContainerConfig.Ports,
+		Volumes:     workspace.ContainerConfig.Volumes,
+		Network:     workspace.ContainerConfig.Network,
+		User:        workspace.ContainerConfig.User,
+		Privileged:  workspace.ContainerConfig.Privileged,
+		Detached:    workspace.ContainerConfig.Detached,
+		Remove:      workspace.ContainerConfig.Remove,
+		TTY:         workspace.ContainerConfig.TTY,
+		Interactive: workspace.ContainerConfig.Interactive,
+		Labels:      workspace.ContainerConfig.Labels,
+	}
+
+	// Add workspace volume mount
+	if runOptions.Volumes == nil {
+		runOptions.Volumes = make(map[string]string)
+	}
+	runOptions.Volumes[workspace.Path] = "/workspace"
+
+	// Generate container name if not provided
+	if runOptions.Name == "" {
+		runOptions.Name = fmt.Sprintf("cowork-workspace-%d", workspaceID)
+	}
+
+	// Add workspace-specific labels
+	if runOptions.Labels == nil {
+		runOptions.Labels = make(map[string]string)
+	}
+	runOptions.Labels["cowork.workspace.id"] = fmt.Sprintf("%d", workspaceID)
+	runOptions.Labels["cowork.workspace.name"] = workspace.TaskName
+	runOptions.Labels["cowork.workspace.branch"] = workspace.BranchName
+
+	// Run the container
+	containerID, err := m.containerManager.Run(ctx, runOptions)
+	if err != nil {
+		return fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Update workspace with container ID
+	workspace.ContainerID = containerID
+	workspace.Status = types.WorkspaceStatusActive
+	workspace.LastActivity = time.Now()
+
+	// Update container status
+	containerInfo, err := m.containerManager.Inspect(ctx, containerID)
+	if err == nil {
+		workspace.ContainerStatus = &types.ContainerStatus{
+			ID:      containerInfo.ID,
+			Name:    containerInfo.Name,
+			Image:   containerInfo.Image,
+			Status:  containerInfo.Status,
+			Created: containerInfo.Created,
+			Ports:   containerInfo.Ports,
+			Labels:  containerInfo.Labels,
+		}
+	}
+
+	// Save updated workspace metadata
+	return UpdateWorkspaceMetadata(workspace)
+}
+
+// StopContainer stops the container associated with a workspace
+func (m *Manager) StopContainer(ctx context.Context, workspaceID int, timeoutSeconds int) error {
+	if m.containerManager == nil {
+		return fmt.Errorf("no container engine available")
+	}
+
+	// Get the workspace
+	workspace, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// Check if workspace has a container
+	if workspace.ContainerID == "" {
+		return fmt.Errorf("workspace does not have an associated container")
+	}
+
+	// Stop the container
+	if err := m.containerManager.Stop(ctx, workspace.ContainerID, timeoutSeconds); err != nil {
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+
+	// Update workspace status
+	workspace.Status = types.WorkspaceStatusReady
+	workspace.LastActivity = time.Now()
+
+	// Update container status
+	containerInfo, err := m.containerManager.Inspect(ctx, workspace.ContainerID)
+	if err == nil {
+		workspace.ContainerStatus = &types.ContainerStatus{
+			ID:      containerInfo.ID,
+			Name:    containerInfo.Name,
+			Image:   containerInfo.Image,
+			Status:  containerInfo.Status,
+			Created: containerInfo.Created,
+			Ports:   containerInfo.Ports,
+			Labels:  containerInfo.Labels,
+		}
+	}
+
+	// Save updated workspace metadata
+	return UpdateWorkspaceMetadata(workspace)
+}
+
+// GetContainerStatus retrieves the current status of the container associated with a workspace
+func (m *Manager) GetContainerStatus(ctx context.Context, workspaceID int) (*types.ContainerStatus, error) {
+	if m.containerManager == nil {
+		return nil, fmt.Errorf("no container engine available")
+	}
+
+	// Get the workspace
+	workspace, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// Check if workspace has a container
+	if workspace.ContainerID == "" {
+		return nil, fmt.Errorf("workspace does not have an associated container")
+	}
+
+	// Get container information
+	containerInfo, err := m.containerManager.Inspect(ctx, workspace.ContainerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	// Update workspace container status
+	workspace.ContainerStatus = &types.ContainerStatus{
+		ID:      containerInfo.ID,
+		Name:    containerInfo.Name,
+		Image:   containerInfo.Image,
+		Status:  containerInfo.Status,
+		Created: containerInfo.Created,
+		Ports:   containerInfo.Ports,
+		Labels:  containerInfo.Labels,
+	}
+
+	// Save updated workspace metadata
+	if err := UpdateWorkspaceMetadata(workspace); err != nil {
+		fmt.Printf("Warning: failed to update workspace metadata: %v\n", err)
+	}
+
+	return workspace.ContainerStatus, nil
+}
+
+// ExecInContainer executes a command in the container associated with a workspace
+func (m *Manager) ExecInContainer(ctx context.Context, workspaceID int, command []string) error {
+	if m.containerManager == nil {
+		return fmt.Errorf("no container engine available")
+	}
+
+	// Get the workspace
+	workspace, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// Check if workspace has a container
+	if workspace.ContainerID == "" {
+		return fmt.Errorf("workspace does not have an associated container")
+	}
+
+	// Execute command in container
+	execOptions := container.ExecOptions{
+		TTY:         true,
+		Interactive: true,
+	}
+
+	return m.containerManager.Exec(ctx, workspace.ContainerID, command, execOptions)
+}
+
+// GetContainerLogs retrieves logs from the container associated with a workspace
+func (m *Manager) GetContainerLogs(ctx context.Context, workspaceID int, follow bool, tail int) (string, error) {
+	if m.containerManager == nil {
+		return "", fmt.Errorf("no container engine available")
+	}
+
+	// Get the workspace
+	workspace, err := m.GetWorkspace(workspaceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// Check if workspace has a container
+	if workspace.ContainerID == "" {
+		return "", fmt.Errorf("workspace does not have an associated container")
+	}
+
+	// Get container logs
+	logOptions := container.LogOptions{
+		Follow:     follow,
+		Timestamps: true,
+		Tail:       tail,
+	}
+
+	logsReader, err := m.containerManager.Logs(ctx, workspace.ContainerID, logOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer logsReader.Close()
+
+	// Read all logs
+	logsBytes, err := io.ReadAll(logsReader)
+	if err != nil {
+		return "", fmt.Errorf("failed to read container logs: %w", err)
+	}
+
+	return string(logsBytes), nil
 }

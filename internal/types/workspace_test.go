@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-
-
 // TestWorkspaceStatus_String tests the String method for workspace statuses
 func TestWorkspaceStatus_String(t *testing.T) {
 	// Test case: String method should return the correct string representation
@@ -63,12 +61,12 @@ func TestCreateWorkspaceRequest_Validate_WithValidRequest(t *testing.T) {
 		TaskName:   "test-task",
 		SourceRepo: "https://github.com/test/repo.git",
 	}
-	
+
 	err := req.Validate()
 	if err != nil {
 		t.Errorf("Expected valid request to pass validation, got error: %v", err)
 	}
-	
+
 	// Verify defaults were set
 	if req.BaseBranch != "main" {
 		t.Errorf("Expected BaseBranch to default to 'main', got '%s'", req.BaseBranch)
@@ -82,12 +80,12 @@ func TestCreateWorkspaceRequest_Validate_WithEmptyTaskName(t *testing.T) {
 		TaskName:   "",
 		SourceRepo: "https://github.com/test/repo.git",
 	}
-	
+
 	err := req.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with empty task name")
 	}
-	
+
 	expectedError := "task name is required"
 	if err.Error() != expectedError {
 		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
@@ -101,12 +99,12 @@ func TestCreateWorkspaceRequest_Validate_WithEmptySourceRepo(t *testing.T) {
 		TaskName:   "test-task",
 		SourceRepo: "",
 	}
-	
+
 	err := req.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with empty source repository")
 	}
-	
+
 	expectedError := "source repository URL is required"
 	if err.Error() != expectedError {
 		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
@@ -121,12 +119,12 @@ func TestCreateWorkspaceRequest_Validate_WithCustomBaseBranch(t *testing.T) {
 		SourceRepo: "https://github.com/test/repo.git",
 		BaseBranch: "develop",
 	}
-	
+
 	err := req.Validate()
 	if err != nil {
 		t.Errorf("Expected valid request to pass validation, got error: %v", err)
 	}
-	
+
 	if req.BaseBranch != "develop" {
 		t.Errorf("Expected BaseBranch to remain 'develop', got '%s'", req.BaseBranch)
 	}
@@ -137,7 +135,7 @@ func TestWorkspace_Creation(t *testing.T) {
 	// Test case: Creating a workspace should set all fields correctly
 	now := time.Now()
 	workspace := &Workspace{
-		ID:           "test-id",
+		ID:           123,
 		TaskName:     "test-task",
 		TicketID:     "123",
 		Path:         "/path/to/workspace",
@@ -153,60 +151,60 @@ func TestWorkspace_Creation(t *testing.T) {
 			"key2": "value2",
 		},
 	}
-	
+
 	// Verify all fields are set correctly
-	if workspace.ID != "test-id" {
-		t.Errorf("Expected ID 'test-id', got '%s'", workspace.ID)
+	if workspace.ID != 123 {
+		t.Errorf("Expected ID 123, got %d", workspace.ID)
 	}
-	
+
 	if workspace.TaskName != "test-task" {
 		t.Errorf("Expected TaskName 'test-task', got '%s'", workspace.TaskName)
 	}
-	
+
 	if workspace.TicketID != "123" {
 		t.Errorf("Expected TicketID '123', got '%s'", workspace.TicketID)
 	}
-	
+
 	if workspace.Path != "/path/to/workspace" {
 		t.Errorf("Expected Path '/path/to/workspace', got '%s'", workspace.Path)
 	}
-	
+
 	if workspace.BranchName != "task/test-task-123" {
 		t.Errorf("Expected BranchName 'task/test-task-123', got '%s'", workspace.BranchName)
 	}
-	
+
 	if workspace.SourceRepo != "https://github.com/test/repo.git" {
 		t.Errorf("Expected SourceRepo 'https://github.com/test/repo.git', got '%s'", workspace.SourceRepo)
 	}
-	
+
 	if workspace.BaseBranch != "main" {
 		t.Errorf("Expected BaseBranch 'main', got '%s'", workspace.BaseBranch)
 	}
-	
+
 	if workspace.CreatedAt != now {
 		t.Errorf("Expected CreatedAt to match provided time")
 	}
-	
+
 	if workspace.LastActivity != now {
 		t.Errorf("Expected LastActivity to match provided time")
 	}
-	
+
 	if workspace.Status != WorkspaceStatusReady {
 		t.Errorf("Expected Status 'ready', got '%s'", workspace.Status)
 	}
-	
+
 	if workspace.ContainerID != "container-123" {
 		t.Errorf("Expected ContainerID 'container-123', got '%s'", workspace.ContainerID)
 	}
-	
+
 	if len(workspace.Metadata) != 2 {
 		t.Errorf("Expected 2 metadata entries, got %d", len(workspace.Metadata))
 	}
-	
+
 	if workspace.Metadata["key1"] != "value1" {
 		t.Errorf("Expected metadata key1='value1', got '%s'", workspace.Metadata["key1"])
 	}
-	
+
 	if workspace.Metadata["key2"] != "value2" {
 		t.Errorf("Expected metadata key2='value2', got '%s'", workspace.Metadata["key2"])
 	}

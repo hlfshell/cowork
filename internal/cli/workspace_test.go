@@ -104,8 +104,8 @@ func TestWorkspaceClearCommand(t *testing.T) {
 		t.Errorf("Metadata file should contain task name: %s", workspace.TaskName)
 	}
 
-	if !strings.Contains(string(metadataContent), workspace.ID) {
-		t.Errorf("Metadata file should contain workspace ID: %s", workspace.ID)
+	if !strings.Contains(string(metadataContent), fmt.Sprintf("%d", workspace.ID)) {
+		t.Errorf("Metadata file should contain workspace ID: %d", workspace.ID)
 	}
 }
 
@@ -692,7 +692,7 @@ func TestWorkspaceDescribeCommand(t *testing.T) {
 		t.Errorf("Output should show task name, got: %s", outputStr)
 	}
 
-	if !strings.Contains(outputStr, "ID: "+workspace.ID) {
+	if !strings.Contains(outputStr, "ID: "+fmt.Sprintf("%d", workspace.ID)) {
 		t.Errorf("Output should show workspace ID, got: %s", outputStr)
 	}
 
@@ -745,7 +745,7 @@ func TestWorkspaceDescribeCommand_WithWorkspaceID(t *testing.T) {
 	app.rootCmd.SetOut(&output)
 	app.rootCmd.SetErr(&output)
 
-	app.rootCmd.SetArgs([]string{"workspace", "describe", workspace.ID})
+	app.rootCmd.SetArgs([]string{"workspace", "describe", fmt.Sprintf("%d", workspace.ID)})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -759,7 +759,7 @@ func TestWorkspaceDescribeCommand_WithWorkspaceID(t *testing.T) {
 		t.Errorf("Output should show task name, got: %s", outputStr)
 	}
 
-	if !strings.Contains(outputStr, "ID: "+workspace.ID) {
+	if !strings.Contains(outputStr, "ID: "+fmt.Sprintf("%d", workspace.ID)) {
 		t.Errorf("Output should show workspace ID, got: %s", outputStr)
 	}
 }
@@ -1345,7 +1345,7 @@ func TestWorkspaceDirCommand_Functional(t *testing.T) {
 
 	// Test dir command with workspace ID
 	output.Reset()
-	app.rootCmd.SetArgs([]string{"workspace", "dir", workspace.ID})
+	app.rootCmd.SetArgs([]string{"workspace", "dir", fmt.Sprintf("%d", workspace.ID)})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -1455,7 +1455,7 @@ func TestWorkspaceGitCommand_Functional(t *testing.T) {
 	}
 
 	// Test git branch command in workspace
-	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "branch"})
+	app.rootCmd.SetArgs([]string{"workspace", "git", fmt.Sprintf("%d", workspace.ID), "branch"})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -1565,7 +1565,7 @@ func TestWorkspaceGitCommand_WithGitOperations(t *testing.T) {
 	}
 
 	// Test git remote command
-	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "remote"})
+	app.rootCmd.SetArgs([]string{"workspace", "git", fmt.Sprintf("%d", workspace.ID), "remote"})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -1623,7 +1623,7 @@ func TestWorkspaceGitCommand_WithMultipleArgs(t *testing.T) {
 	}
 
 	// Test git show with multiple arguments
-	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "show", "HEAD"})
+	app.rootCmd.SetArgs([]string{"workspace", "git", fmt.Sprintf("%d", workspace.ID), "show", "HEAD"})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -1693,7 +1693,7 @@ func TestWorkspaceDirAndGitCommands_Integration(t *testing.T) {
 
 	// Test that both commands work with workspace ID
 	output.Reset()
-	app.rootCmd.SetArgs([]string{"workspace", "dir", workspace.ID})
+	app.rootCmd.SetArgs([]string{"workspace", "dir", fmt.Sprintf("%d", workspace.ID)})
 
 	err = app.rootCmd.Execute()
 	if err != nil {
@@ -1707,7 +1707,7 @@ func TestWorkspaceDirAndGitCommands_Integration(t *testing.T) {
 	}
 
 	// Test git branch command with workspace ID
-	app.rootCmd.SetArgs([]string{"workspace", "git", workspace.ID, "branch"})
+	app.rootCmd.SetArgs([]string{"workspace", "git", fmt.Sprintf("%d", workspace.ID), "branch"})
 
 	err = app.rootCmd.Execute()
 	if err != nil {

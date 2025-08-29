@@ -62,6 +62,64 @@ type CreateWorkspaceRequest struct {
 
 	// Metadata to attach to the workspace
 	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// Task ID if this workspace is created for a specific task (optional)
+	// If provided, the workspace will share the same ID as the task
+	TaskID int `json:"task_id,omitempty"`
+
+	// Container configuration (optional)
+	ContainerConfig *ContainerConfig `json:"container_config,omitempty"`
+}
+
+// ContainerConfig defines the container configuration for a workspace
+type ContainerConfig struct {
+	// Container image to use
+	Image string `json:"image"`
+
+	// Container name (optional, will be auto-generated if not provided)
+	Name string `json:"name,omitempty"`
+
+	// Working directory inside the container
+	WorkingDir string `json:"working_dir,omitempty"`
+
+	// Command to run in the container
+	Command []string `json:"command,omitempty"`
+
+	// Arguments for the command
+	Args []string `json:"args,omitempty"`
+
+	// Environment variables
+	Environment map[string]string `json:"environment,omitempty"`
+
+	// Port mappings (host:container)
+	Ports map[string]string `json:"ports,omitempty"`
+
+	// Additional volume mounts (host:container)
+	Volumes map[string]string `json:"volumes,omitempty"`
+
+	// Network to connect to
+	Network string `json:"network,omitempty"`
+
+	// User to run as
+	User string `json:"user,omitempty"`
+
+	// Whether to run in privileged mode
+	Privileged bool `json:"privileged,omitempty"`
+
+	// Whether to run in detached mode
+	Detached bool `json:"detached,omitempty"`
+
+	// Whether to remove container on exit
+	Remove bool `json:"remove,omitempty"`
+
+	// Whether to allocate a TTY
+	TTY bool `json:"tty,omitempty"`
+
+	// Whether to run interactively
+	Interactive bool `json:"interactive,omitempty"`
+
+	// Labels to attach to the container
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Validate checks if the create workspace request is valid
@@ -84,7 +142,8 @@ func (req *CreateWorkspaceRequest) Validate() error {
 // Workspace represents an isolated workspace for a specific task
 type Workspace struct {
 	// Unique identifier for the workspace
-	ID string `json:"id"`
+	// If this workspace was created for a task, this ID matches the task ID
+	ID int `json:"id,string"`
 
 	// Human-readable name for the task
 	TaskName string `json:"task_name"`
@@ -119,6 +178,44 @@ type Workspace struct {
 	// Associated container ID (if any)
 	ContainerID string `json:"container_id,omitempty"`
 
+	// Container configuration (if any)
+	ContainerConfig *ContainerConfig `json:"container_config,omitempty"`
+
+	// Container status information
+	ContainerStatus *ContainerStatus `json:"container_status,omitempty"`
+
 	// Metadata for the workspace
 	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// Task ID if this workspace was created for a specific task
+	// If this is a standalone workspace, this will be 0
+	TaskID int `json:"task_id,omitempty"`
+
+	// IsTaskWorkspace indicates whether this workspace was created for a task
+	// This is a computed field based on whether TaskID is set
+	IsTaskWorkspace bool `json:"is_task_workspace"`
+}
+
+// ContainerStatus represents the current status of a workspace container
+type ContainerStatus struct {
+	// Container ID
+	ID string `json:"id"`
+
+	// Container name
+	Name string `json:"name"`
+
+	// Container image
+	Image string `json:"image"`
+
+	// Container status (running, stopped, etc.)
+	Status string `json:"status"`
+
+	// Container creation time
+	Created string `json:"created"`
+
+	// Exposed ports
+	Ports []string `json:"ports"`
+
+	// Container labels
+	Labels map[string]string `json:"labels"`
 }

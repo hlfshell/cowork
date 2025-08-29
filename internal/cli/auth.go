@@ -185,7 +185,8 @@ func newAuthProviderCommand(app *App) *cobra.Command {
 
 	// Add flags to login command
 	loginCmd.Flags().String("method", "token", "Authentication method (token, basic)")
-	loginCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+	loginCmd.Flags().String("scope", "project", "Authentication scope (project, global)")
+	loginCmd.Flags().Bool("global", false, "Set authentication globally (requires --global flag)")
 	loginCmd.Flags().String("token", "", "API token (for token method)")
 	loginCmd.Flags().String("username", "", "Username (for basic method)")
 	loginCmd.Flags().String("password", "", "Password (for basic method)")
@@ -202,7 +203,8 @@ func newAuthProviderCommand(app *App) *cobra.Command {
 	}
 
 	// Add flags to logout command
-	logoutCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+	logoutCmd.Flags().String("scope", "project", "Authentication scope (project, global)")
+	logoutCmd.Flags().Bool("global", false, "Remove global authentication (requires --global flag)")
 
 	// Test command
 	testCmd := &cobra.Command{
@@ -216,7 +218,8 @@ func newAuthProviderCommand(app *App) *cobra.Command {
 	}
 
 	// Add flags to test command
-	testCmd.Flags().String("scope", "global", "Authentication scope (global, project)")
+	testCmd.Flags().String("scope", "project", "Authentication scope (project, global)")
+	testCmd.Flags().Bool("global", false, "Test global authentication (requires --global flag)")
 
 	// List command
 	listCmd := &cobra.Command{
@@ -844,6 +847,7 @@ func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
 	// Get flags
 	method, _ := cmd.Flags().GetString("method")
 	scope, _ := cmd.Flags().GetString("scope")
+	global, _ := cmd.Flags().GetBool("global")
 	token, _ := cmd.Flags().GetString("token")
 	username, _ := cmd.Flags().GetString("username")
 	password, _ := cmd.Flags().GetString("password")
@@ -861,10 +865,15 @@ func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
 		return nil
 	}
 
-	// Parse scope
-	authScope, err := parseAuthScope(scope)
-	if err != nil {
-		return err
+	// Parse scope and handle global flag
+	var authScope auth.AuthScope
+	if global {
+		authScope = auth.AuthScopeGlobal
+	} else {
+		authScope, err = parseAuthScope(scope)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create auth manager
@@ -915,11 +924,18 @@ func (app *App) logoutProvider(cmd *cobra.Command, providerName string) error {
 		return err
 	}
 
-	// Get scope
+	// Get scope and handle global flag
 	scope, _ := cmd.Flags().GetString("scope")
-	authScope, err := parseAuthScope(scope)
-	if err != nil {
-		return err
+	global, _ := cmd.Flags().GetBool("global")
+	
+	var authScope auth.AuthScope
+	if global {
+		authScope = auth.AuthScopeGlobal
+	} else {
+		authScope, err = parseAuthScope(scope)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create auth manager
@@ -947,11 +963,18 @@ func (app *App) testProviderAuth(cmd *cobra.Command, providerName string) error 
 		return err
 	}
 
-	// Get scope
+	// Get scope and handle global flag
 	scope, _ := cmd.Flags().GetString("scope")
-	authScope, err := parseAuthScope(scope)
-	if err != nil {
-		return err
+	global, _ := cmd.Flags().GetBool("global")
+	
+	var authScope auth.AuthScope
+	if global {
+		authScope = auth.AuthScopeGlobal
+	} else {
+		authScope, err = parseAuthScope(scope)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create auth manager

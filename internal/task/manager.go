@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"os/exec"
+
 	"github.com/hlfshell/cowork/internal/types"
+	"github.com/hlfshell/cowork/internal/workspace"
 )
 
 const (
@@ -114,7 +117,7 @@ func (m *Manager) loadTasks() error {
 
 	// Load tasks into memory
 	for _, task := range tasks {
-		m.tasks[task.ID] = task
+		m.tasks[fmt.Sprintf("%d", task.ID)] = task
 	}
 
 	return nil
@@ -222,7 +225,7 @@ func (m *Manager) CreateTask(req *types.CreateTaskRequest) (*types.Task, error) 
 	}
 
 	// Generate unique ID
-	taskID := uuid.New().String()
+	taskID := types.GenerateTaskID()
 
 	// Create the task
 	now := time.Now()
@@ -245,13 +248,13 @@ func (m *Manager) CreateTask(req *types.CreateTaskRequest) (*types.Task, error) 
 		Metadata:         req.Metadata,
 	}
 
-	// Add to memory
-	m.tasks[taskID] = task
+	// Add to memory (convert integer ID to string for map key)
+	m.tasks[fmt.Sprintf("%d", taskID)] = task
 
 	// Save to file (we already hold the lock, so use saveTasksUnlocked)
 	if err := m.saveTasksUnlocked(); err != nil {
 		// Remove from memory if save failed
-		delete(m.tasks, taskID)
+		delete(m.tasks, fmt.Sprintf("%d", taskID))
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
 
@@ -283,6 +286,11 @@ func (m *Manager) GetTaskByName(taskName string) (*types.Task, error) {
 	}
 
 	return nil, fmt.Errorf("task not found: %s", taskName)
+}
+
+// CreateWorkspaceForTask creates a workspace for a task (alias for CreateTaskWorkspace)
+func (m *Manager) CreateWorkspaceForTask(taskID string, req *types.CreateWorkspaceRequest) (*types.Workspace, error) {
+	return m.CreateTaskWorkspace(taskID, req)
 }
 
 // ListTasks returns all tasks, optionally filtered
@@ -413,9 +421,9 @@ func (m *Manager) UpdateTask(req *types.UpdateTaskRequest) (*types.Task, error) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	task, exists := m.tasks[req.TaskID]
+	task, exists := m.tasks[fmt.Sprintf("%d", req.TaskID)]
 	if !exists {
-		return nil, fmt.Errorf("task not found: %s", req.TaskID)
+		return nil, fmt.Errorf("task not found: %d", req.TaskID)
 	}
 
 	// Update fields if provided
@@ -530,8 +538,8 @@ func (m *Manager) DeleteTask(taskID string) error {
 }
 
 // GetTaskStats returns statistics about tasks
-func (m *Manager) GetTaskStats(filter *types.TaskFilter) (*types.TaskStats, error) {
-	tasks, err := m.ListTasks(filter)
+func (m *Manager) GetTaskStats() (*types.TaskStats, error) {
+	tasks, err := m.ListTasks(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks for stats: %w", err)
 	}
@@ -621,12 +629,18 @@ func (m *Manager) GetNextQueuedTask() (*types.Task, error) {
 func (m *Manager) CompleteTask(taskID string) error {
 	status := types.TaskStatusCompleted
 
+	// Convert string taskID to integer
+	taskIDInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID format: %s", taskID)
+	}
+
 	req := &types.UpdateTaskRequest{
-		TaskID: taskID,
+		TaskID: taskIDInt,
 		Status: &status,
 	}
 
-	_, err := m.UpdateTask(req)
+	_, err = m.UpdateTask(req)
 	return err
 }
 
@@ -634,13 +648,19 @@ func (m *Manager) CompleteTask(taskID string) error {
 func (m *Manager) FailTask(taskID string, errorMessage string) error {
 	status := types.TaskStatusFailed
 
+	// Convert string taskID to integer
+	taskIDInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID format: %s", taskID)
+	}
+
 	req := &types.UpdateTaskRequest{
-		TaskID:       taskID,
+		TaskID:       taskIDInt,
 		Status:       &status,
 		ErrorMessage: &errorMessage,
 	}
 
-	_, err := m.UpdateTask(req)
+	_, err = m.UpdateTask(req)
 	return err
 }
 
@@ -648,12 +668,18 @@ func (m *Manager) FailTask(taskID string, errorMessage string) error {
 func (m *Manager) CancelTask(taskID string) error {
 	status := types.TaskStatusCancelled
 
+	// Convert string taskID to integer
+	taskIDInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID format: %s", taskID)
+	}
+
 	req := &types.UpdateTaskRequest{
-		TaskID: taskID,
+		TaskID: taskIDInt,
 		Status: &status,
 	}
 
-	_, err := m.UpdateTask(req)
+	_, err = m.UpdateTask(req)
 	return err
 }
 
@@ -661,12 +687,18 @@ func (m *Manager) CancelTask(taskID string) error {
 func (m *Manager) PauseTask(taskID string) error {
 	status := types.TaskStatusPaused
 
+	// Convert string taskID to integer
+	taskIDInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID format: %s", taskID)
+	}
+
 	req := &types.UpdateTaskRequest{
-		TaskID: taskID,
+		TaskID: taskIDInt,
 		Status: &status,
 	}
 
-	_, err := m.UpdateTask(req)
+	_, err = m.UpdateTask(req)
 	return err
 }
 
@@ -674,12 +706,18 @@ func (m *Manager) PauseTask(taskID string) error {
 func (m *Manager) ResumeTask(taskID string) error {
 	status := types.TaskStatusQueued
 
+	// Convert string taskID to integer
+	taskIDInt, err := strconv.Atoi(taskID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID format: %s", taskID)
+	}
+
 	req := &types.UpdateTaskRequest{
-		TaskID: taskID,
+		TaskID: taskIDInt,
 		Status: &status,
 	}
 
-	_, err := m.UpdateTask(req)
+	_, err = m.UpdateTask(req)
 	return err
 }
 
@@ -703,7 +741,7 @@ func (m *Manager) DeleteTaskWorkspace(taskID string) error {
 	}
 
 	// Clear workspace information from task
-	task.WorkspaceID = ""
+	task.WorkspaceID = 0
 	task.WorkspacePath = ""
 	task.BranchName = ""
 	task.SourceRepo = ""
@@ -712,6 +750,105 @@ func (m *Manager) DeleteTaskWorkspace(taskID string) error {
 	// Save updated task (we already hold the lock, so use saveTasksUnlocked)
 	if err := m.saveTasksUnlocked(); err != nil {
 		return fmt.Errorf("failed to save task after workspace deletion: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTaskWorkspace creates a workspace for a task
+func (m *Manager) CreateTaskWorkspace(taskID string, req *types.CreateWorkspaceRequest) (*types.Workspace, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	task, exists := m.tasks[taskID]
+	if !exists {
+		return nil, fmt.Errorf("task not found: %s", taskID)
+	}
+
+	// Create workspace using the workspace manager
+	workspaceManager, err := workspace.NewManager(300)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace manager: %w", err)
+	}
+
+	// Set the task ID in the request to ensure workspace shares the same ID
+	req.TaskID = task.ID
+
+	workspace, err := workspaceManager.CreateWorkspace(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace: %w", err)
+	}
+
+	// Update task with workspace information
+	task.WorkspaceID = workspace.ID
+	task.WorkspacePath = workspace.Path
+	task.BranchName = workspace.BranchName
+	task.SourceRepo = workspace.SourceRepo
+	task.BaseBranch = workspace.BaseBranch
+
+	// Save updated task
+	if err := m.saveTasksUnlocked(); err != nil {
+		return nil, fmt.Errorf("failed to save task after workspace creation: %w", err)
+	}
+
+	return workspace, nil
+}
+
+// GetTaskWorkspace retrieves the workspace for a task
+func (m *Manager) GetTaskWorkspace(taskID string) (*types.Workspace, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	task, exists := m.tasks[taskID]
+	if !exists {
+		return nil, fmt.Errorf("task not found: %s", taskID)
+	}
+
+	if task.WorkspaceID == 0 {
+		return nil, fmt.Errorf("task '%s' has no associated workspace", task.Name)
+	}
+
+	// Get workspace using the workspace manager
+	workspaceManager, err := workspace.NewManager(300)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace manager: %w", err)
+	}
+
+	return workspaceManager.GetWorkspace(task.WorkspaceID)
+}
+
+// GetTaskWorkspacePath returns the path to the workspace for a task
+func (m *Manager) GetTaskWorkspacePath(taskID string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	task, exists := m.tasks[taskID]
+	if !exists {
+		return "", fmt.Errorf("task not found: %s", taskID)
+	}
+
+	if task.WorkspacePath == "" {
+		return "", fmt.Errorf("task '%s' has no associated workspace", task.Name)
+	}
+
+	return task.WorkspacePath, nil
+}
+
+// RunGitInTaskWorkspace runs a git command in the task's workspace
+func (m *Manager) RunGitInTaskWorkspace(taskID string, gitArgs []string) error {
+	workspacePath, err := m.GetTaskWorkspacePath(taskID)
+	if err != nil {
+		return err
+	}
+
+	// Create git command
+	cmd := exec.Command("git", gitArgs...)
+	cmd.Dir = workspacePath
+
+	// Run the command
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git command failed: %w, output: %s", err, string(output))
 	}
 
 	return nil

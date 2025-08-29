@@ -10,6 +10,15 @@ import (
 	"github.com/hlfshell/cowork/internal/types"
 )
 
+// Branch name generation constants
+const (
+	// MaxBranchNameLength is the maximum length for branch names (30 characters for git operations)
+	MaxBranchNameLength = 30
+
+	// DefaultTaskName is the default name used when no valid task name can be generated
+	DefaultTaskName = "task"
+)
+
 // GitOperations provides Git-related functionality for workspace management
 type GitOperations struct {
 	// Default timeout for Git operations in seconds
@@ -75,7 +84,14 @@ func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, work
 	}
 
 	// Create a new branch for the task
-	branchName := g.generateBranchName(req.TaskName, req.TicketID)
+	// Use branch name from metadata if provided, otherwise generate one
+	var branchName string
+	if req.Metadata != nil && req.Metadata["branch_name"] != "" {
+		branchName = req.Metadata["branch_name"]
+	} else {
+		branchName = g.generateBranchName(req.TaskName, req.TicketID)
+	}
+
 	if err := g.createAndCheckoutBranch(workspacePath, branchName); err != nil {
 		return fmt.Errorf("failed to create task branch: %w", err)
 	}
@@ -186,10 +202,11 @@ func (g *GitOperations) generateBranchName(taskName, ticketID string) string {
 
 // sanitizeBranchName converts a task name into a valid Git branch name
 func (g *GitOperations) sanitizeBranchName(taskName string) string {
-	// Replace invalid characters with hyphens
-	invalidChars := []string{" ", "/", "\\", ":", "*", "?", "\"", "<", ">", "|", "..", "#"}
-	sanitized := taskName
+	// Convert to lowercase for consistency
+	sanitized := strings.ToLower(taskName)
 
+	// Replace invalid characters with hyphens
+	invalidChars := []string{" ", "/", "\\", ":", "*", "?", "\"", "<", ">", "|", "..", "#", "&", "(", ")", "[", "]", "{", "}", "!", "@", "$", "%", "^", "+", "=", "~", "`", "_"}
 	for _, char := range invalidChars {
 		sanitized = strings.ReplaceAll(sanitized, char, "-")
 	}
@@ -199,13 +216,18 @@ func (g *GitOperations) sanitizeBranchName(taskName string) string {
 
 	// Ensure it's not empty
 	if sanitized == "" {
-		sanitized = "task"
+		sanitized = DefaultTaskName
 	}
 
-	// Limit length to 50 characters
-	if len(sanitized) > 50 {
-		sanitized = sanitized[:50]
+	// Limit length for better readability
+	if len(sanitized) > MaxBranchNameLength {
+		sanitized = sanitized[:MaxBranchNameLength]
 		sanitized = strings.TrimRight(sanitized, "-")
+	}
+
+	// Remove multiple consecutive hyphens
+	for strings.Contains(sanitized, "--") {
+		sanitized = strings.ReplaceAll(sanitized, "--", "-")
 	}
 
 	return sanitized

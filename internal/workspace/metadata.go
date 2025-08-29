@@ -19,7 +19,7 @@ const (
 // WorkspaceMetadata represents the metadata stored for each workspace
 type WorkspaceMetadata struct {
 	// Unique identifier for the workspace
-	ID string `json:"id"`
+	ID int `json:"id,string"`
 
 	// Human-readable name for the task
 	TaskName string `json:"task_name"`
@@ -51,25 +51,41 @@ type WorkspaceMetadata struct {
 	// Associated container ID (if any)
 	ContainerID string `json:"container_id,omitempty"`
 
+	// Container configuration (if any)
+	ContainerConfig *types.ContainerConfig `json:"container_config,omitempty"`
+
+	// Container status information
+	ContainerStatus *types.ContainerStatus `json:"container_status,omitempty"`
+
 	// Metadata for the workspace
 	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// Task ID if this workspace was created for a specific task
+	TaskID int `json:"task_id,omitempty"`
+
+	// IsTaskWorkspace indicates whether this workspace was created for a task
+	IsTaskWorkspace bool `json:"is_task_workspace"`
 }
 
 // SaveWorkspaceMetadata saves workspace metadata to a file within the workspace directory
 func SaveWorkspaceMetadata(workspacePath string, workspace *types.Workspace) error {
 	metadata := &WorkspaceMetadata{
-		ID:           workspace.ID,
-		TaskName:     workspace.TaskName,
-		Description:  workspace.Description,
-		TicketID:     workspace.TicketID,
-		BranchName:   workspace.BranchName,
-		SourceRepo:   workspace.SourceRepo,
-		BaseBranch:   workspace.BaseBranch,
-		CreatedAt:    workspace.CreatedAt,
-		LastActivity: workspace.LastActivity,
-		Status:       workspace.Status,
-		ContainerID:  workspace.ContainerID,
-		Metadata:     workspace.Metadata,
+		ID:              workspace.ID,
+		TaskName:        workspace.TaskName,
+		Description:     workspace.Description,
+		TicketID:        workspace.TicketID,
+		BranchName:      workspace.BranchName,
+		SourceRepo:      workspace.SourceRepo,
+		BaseBranch:      workspace.BaseBranch,
+		CreatedAt:       workspace.CreatedAt,
+		LastActivity:    workspace.LastActivity,
+		Status:          workspace.Status,
+		ContainerID:     workspace.ContainerID,
+		ContainerConfig: workspace.ContainerConfig,
+		ContainerStatus: workspace.ContainerStatus,
+		Metadata:        workspace.Metadata,
+		TaskID:          workspace.TaskID,
+		IsTaskWorkspace: workspace.IsTaskWorkspace,
 	}
 
 	metadataPath := filepath.Join(workspacePath, MetadataFileName)
@@ -111,19 +127,23 @@ func LoadWorkspaceMetadata(workspacePath string) (*types.Workspace, error) {
 
 	// Convert metadata to workspace
 	workspace := &types.Workspace{
-		ID:           metadata.ID,
-		TaskName:     metadata.TaskName,
-		Description:  metadata.Description,
-		TicketID:     metadata.TicketID,
-		Path:         workspacePath,
-		BranchName:   metadata.BranchName,
-		SourceRepo:   metadata.SourceRepo,
-		BaseBranch:   metadata.BaseBranch,
-		CreatedAt:    metadata.CreatedAt,
-		LastActivity: metadata.LastActivity,
-		Status:       metadata.Status,
-		ContainerID:  metadata.ContainerID,
-		Metadata:     metadata.Metadata,
+		ID:              metadata.ID,
+		TaskName:        metadata.TaskName,
+		Description:     metadata.Description,
+		TicketID:        metadata.TicketID,
+		Path:            workspacePath,
+		BranchName:      metadata.BranchName,
+		SourceRepo:      metadata.SourceRepo,
+		BaseBranch:      metadata.BaseBranch,
+		CreatedAt:       metadata.CreatedAt,
+		LastActivity:    metadata.LastActivity,
+		Status:          metadata.Status,
+		ContainerID:     metadata.ContainerID,
+		ContainerConfig: metadata.ContainerConfig,
+		ContainerStatus: metadata.ContainerStatus,
+		Metadata:        metadata.Metadata,
+		TaskID:          metadata.TaskID,
+		IsTaskWorkspace: metadata.IsTaskWorkspace,
 	}
 
 	return workspace, nil

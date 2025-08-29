@@ -196,27 +196,27 @@ func TestUpdateTaskRequest_Validate_WithValidRequest(t *testing.T) {
 		{
 			name: "Minimal valid request",
 			request: UpdateTaskRequest{
-				TaskID: "task-123",
+				TaskID: 123,
 			},
 		},
 		{
 			name: "Status update only",
 			request: UpdateTaskRequest{
-				TaskID: "task-123",
+				TaskID: 123,
 				Status: &validStatus,
 			},
 		},
 		{
 			name: "Priority update only",
 			request: UpdateTaskRequest{
-				TaskID:   "task-123",
+				TaskID:   123,
 				Priority: &validPriority,
 			},
 		},
 		{
 			name: "Full valid request",
 			request: UpdateTaskRequest{
-				TaskID:           "task-123",
+				TaskID:           123,
 				Status:           &validStatus,
 				Description:      &validString,
 				Priority:         &validPriority,
@@ -256,14 +256,14 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Empty task ID",
 			request: UpdateTaskRequest{
-				TaskID: "",
+				TaskID: 0,
 			},
 			errorContains: "task ID is required",
 		},
 		{
 			name: "Invalid status",
 			request: UpdateTaskRequest{
-				TaskID: "task-123",
+				TaskID: 123,
 				Status: &invalidStatus,
 			},
 			errorContains: "invalid task status",
@@ -271,7 +271,7 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Negative priority",
 			request: UpdateTaskRequest{
-				TaskID:   "task-123",
+				TaskID:   123,
 				Priority: &negativePriority,
 			},
 			errorContains: "priority must be non-negative",
@@ -279,7 +279,7 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Negative estimated minutes",
 			request: UpdateTaskRequest{
-				TaskID:           "task-123",
+				TaskID:           123,
 				EstimatedMinutes: &negativeMinutes,
 			},
 			errorContains: "estimated minutes must be non-negative",
@@ -287,7 +287,7 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Negative actual minutes",
 			request: UpdateTaskRequest{
-				TaskID:        "task-123",
+				TaskID:        123,
 				ActualMinutes: &negativeMinutes,
 			},
 			errorContains: "actual minutes must be non-negative",
@@ -295,7 +295,7 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Negative estimated cost",
 			request: UpdateTaskRequest{
-				TaskID:        "task-123",
+				TaskID:        123,
 				EstimatedCost: &negativeCost,
 			},
 			errorContains: "estimated cost must be non-negative",
@@ -303,7 +303,7 @@ func TestUpdateTaskRequest_Validate_WithInvalidRequest(t *testing.T) {
 		{
 			name: "Negative actual cost",
 			request: UpdateTaskRequest{
-				TaskID:     "task-123",
+				TaskID:     123,
 				ActualCost: &negativeCost,
 			},
 			errorContains: "actual cost must be non-negative",
@@ -327,7 +327,7 @@ func TestTask_Structure(t *testing.T) {
 	completedAt := now
 
 	task := Task{
-		ID:               "task-123",
+		ID:               123,
 		Name:             "test-task",
 		Description:      "A test task",
 		TicketID:         "TICKET-123",
@@ -346,7 +346,7 @@ func TestTask_Structure(t *testing.T) {
 		Tags:             []string{"test", "unit"},
 		Metadata:         map[string]string{"key": "value"},
 		ErrorMessage:     "Test error",
-		WorkspaceID:      "ws-123",
+		WorkspaceID:      123,
 		WorkspacePath:    "/path/to/workspace",
 		BranchName:       "feature/test",
 		SourceRepo:       "/path/to/repo",
@@ -354,7 +354,7 @@ func TestTask_Structure(t *testing.T) {
 	}
 
 	// Verify all fields are set correctly
-	assert.Equal(t, "task-123", task.ID)
+	assert.Equal(t, 123, task.ID)
 	assert.Equal(t, "test-task", task.Name)
 	assert.Equal(t, "A test task", task.Description)
 	assert.Equal(t, "TICKET-123", task.TicketID)
@@ -373,7 +373,7 @@ func TestTask_Structure(t *testing.T) {
 	assert.Equal(t, []string{"test", "unit"}, task.Tags)
 	assert.Equal(t, map[string]string{"key": "value"}, task.Metadata)
 	assert.Equal(t, "Test error", task.ErrorMessage)
-	assert.Equal(t, "ws-123", task.WorkspaceID)
+	assert.Equal(t, 123, task.WorkspaceID)
 	assert.Equal(t, "/path/to/workspace", task.WorkspacePath)
 	assert.Equal(t, "feature/test", task.BranchName)
 	assert.Equal(t, "/path/to/repo", task.SourceRepo)

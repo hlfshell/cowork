@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/hlfshell/cowork/internal/config"
@@ -132,6 +133,9 @@ For more information, visit: https://github.com/hlfshell/cowork`,
 
 	// Add auth commands
 	app.addAuthCommands()
+
+	// Add workflow commands
+	app.addWorkflowCommands()
 }
 
 // addVersionCommand adds a detailed version command
@@ -222,7 +226,7 @@ func (app *App) addWorkspaceCommands() {
 			}
 
 			cmd.Printf("✅ Workspace created successfully!\n")
-			cmd.Printf("   ID: %s\n", workspace.ID)
+			cmd.Printf("   ID: %d\n", workspace.ID)
 			cmd.Printf("   Path: %s\n", workspace.Path)
 			cmd.Printf("   Branch: %s\n", workspace.BranchName)
 			cmd.Printf("   Status: %s\n", workspace.Status)
@@ -260,20 +264,22 @@ func (app *App) addWorkspaceCommands() {
 			var err error
 
 			// First try by ID
-			workspace, err = app.workspaceManager.GetWorkspace(identifier)
-			if err != nil {
-				// If not found by ID, try by task name
+			workspaceID, err := strconv.Atoi(identifier)
+			if err == nil {
+				workspace, err = app.workspaceManager.GetWorkspace(workspaceID)
+			} else {
+				// If not a valid ID, try by task name
 				workspace, err = app.workspaceManager.GetWorkspaceByTaskName(identifier)
-				if err != nil {
-					return fmt.Errorf("workspace not found: %s", identifier)
-				}
+			}
+			if err != nil {
+				return fmt.Errorf("workspace not found: %s", identifier)
 			}
 
 			// Display detailed information
 			cmd.Printf("📁 Workspace Details\n")
 			cmd.Printf("==================\n\n")
 			cmd.Printf("Task Name: %s\n", workspace.TaskName)
-			cmd.Printf("ID: %s\n", workspace.ID)
+			cmd.Printf("ID: %d\n", workspace.ID)
 			cmd.Printf("Status: %s\n", workspace.Status)
 			cmd.Printf("Path: %s\n", workspace.Path)
 			cmd.Printf("Branch: %s\n", workspace.BranchName)
@@ -370,7 +376,7 @@ func (app *App) addWorkspaceCommands() {
 			if !force {
 				cmd.Printf("This will remove %d workspace(s):\n", len(workspaces))
 				for _, ws := range workspaces {
-					cmd.Printf("  - %s (ID: %s)\n", ws.TaskName, ws.ID)
+					cmd.Printf("  - %s (ID: %d)\n", ws.TaskName, ws.ID)
 				}
 				cmd.Print("\nThis action cannot be undone. Are you sure? (y/N): ")
 
@@ -418,13 +424,15 @@ func (app *App) addWorkspaceCommands() {
 			var err error
 
 			// First try by ID
-			workspace, err = app.workspaceManager.GetWorkspace(identifier)
-			if err != nil {
-				// If not found by ID, try by task name
+			workspaceID, err := strconv.Atoi(identifier)
+			if err == nil {
+				workspace, err = app.workspaceManager.GetWorkspace(workspaceID)
+			} else {
+				// If not a valid ID, try by task name
 				workspace, err = app.workspaceManager.GetWorkspaceByTaskName(identifier)
-				if err != nil {
-					return fmt.Errorf("workspace not found: %s", identifier)
-				}
+			}
+			if err != nil {
+				return fmt.Errorf("workspace not found: %s", identifier)
 			}
 
 			// Print the workspace directory path
@@ -452,13 +460,15 @@ func (app *App) addWorkspaceCommands() {
 			var err error
 
 			// First try by ID
-			workspace, err = app.workspaceManager.GetWorkspace(identifier)
-			if err != nil {
-				// If not found by ID, try by task name
+			workspaceID, err := strconv.Atoi(identifier)
+			if err == nil {
+				workspace, err = app.workspaceManager.GetWorkspace(workspaceID)
+			} else {
+				// If not a valid ID, try by task name
 				workspace, err = app.workspaceManager.GetWorkspaceByTaskName(identifier)
-				if err != nil {
-					return fmt.Errorf("workspace not found: %s", identifier)
-				}
+			}
+			if err != nil {
+				return fmt.Errorf("workspace not found: %s", identifier)
 			}
 
 			// Change to workspace directory and run git command
@@ -581,7 +591,7 @@ func (app *App) addTaskCommands() {
 			}
 
 			cmd.Printf("✅ Task created successfully!\n")
-			cmd.Printf("   ID: %s\n", task.ID)
+			cmd.Printf("   ID: %d\n", task.ID)
 			cmd.Printf("   Name: %s\n", task.Name)
 			cmd.Printf("   Status: %s\n", task.Status)
 			cmd.Printf("   Priority: %d\n", task.Priority)
@@ -646,12 +656,24 @@ func (app *App) addTaskCommands() {
 			existingTask, err := app.taskManager.GetTaskByName(taskName)
 			if err == nil {
 				// Task exists, check if it has a workspace
-				if existingTask.WorkspaceID == "" {
+				if existingTask.WorkspaceID == 0 {
 					// No workspace, create one
 					cmd.Printf("Task '%s' exists but has no workspace. Creating workspace...\n", taskName)
 
+					// Get current working directory
+					currentDir, err := os.Getwd()
+					if err != nil {
+						return fmt.Errorf("failed to get current directory: %w", err)
+					}
+
 					// Create workspace for the task
-					err = app.taskManager.CreateWorkspaceForTask(existingTask, description)
+					workspaceReq := &types.CreateWorkspaceRequest{
+						TaskName:    existingTask.Name,
+						Description: description,
+						SourceRepo:  currentDir, // Use current directory as source
+						BaseBranch:  "main",
+					}
+					_, err = app.taskManager.CreateWorkspaceForTask(fmt.Sprintf("%d", existingTask.ID), workspaceReq)
 					if err != nil {
 						return fmt.Errorf("failed to create workspace: %w", err)
 					}
@@ -670,7 +692,7 @@ func (app *App) addTaskCommands() {
 					}
 
 					cmd.Printf("✅ Created workspace for existing task\n")
-					cmd.Printf("   Workspace ID: %s\n", existingTask.WorkspaceID)
+					cmd.Printf("   Workspace ID: %d\n", existingTask.WorkspaceID)
 					cmd.Printf("   Workspace Path: %s\n", existingTask.WorkspacePath)
 				}
 
@@ -686,10 +708,10 @@ func (app *App) addTaskCommands() {
 				}
 
 				cmd.Printf("✅ Started working on task: %s\n", taskName)
-				cmd.Printf("   Task ID: %s\n", updatedTask.ID)
+				cmd.Printf("   Task ID: %d\n", updatedTask.ID)
 				cmd.Printf("   Status: %s\n", updatedTask.Status)
-				if updatedTask.WorkspaceID != "" {
-					cmd.Printf("   Workspace ID: %s\n", updatedTask.WorkspaceID)
+				if updatedTask.WorkspaceID != 0 {
+					cmd.Printf("   Workspace ID: %d\n", updatedTask.WorkspaceID)
 				}
 
 				return nil
@@ -717,8 +739,20 @@ func (app *App) addTaskCommands() {
 				return fmt.Errorf("failed to create task: %w", err)
 			}
 
+			// Get current working directory
+			currentDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
 			// Create workspace for the task
-			err = app.taskManager.CreateWorkspaceForTask(task, description)
+			workspaceReq := &types.CreateWorkspaceRequest{
+				TaskName:    task.Name,
+				Description: description,
+				SourceRepo:  currentDir, // Use current directory as source
+				BaseBranch:  "main",
+			}
+			_, err = app.taskManager.CreateWorkspaceForTask(fmt.Sprintf("%d", task.ID), workspaceReq)
 			if err != nil {
 				return fmt.Errorf("failed to create workspace: %w", err)
 			}
@@ -740,10 +774,10 @@ func (app *App) addTaskCommands() {
 			}
 
 			cmd.Printf("✅ Task created and started successfully!\n")
-			cmd.Printf("   Task ID: %s\n", updatedTask.ID)
+			cmd.Printf("   Task ID: %d\n", updatedTask.ID)
 			cmd.Printf("   Task Name: %s\n", updatedTask.Name)
 			cmd.Printf("   Status: %s\n", updatedTask.Status)
-			cmd.Printf("   Workspace ID: %s\n", task.WorkspaceID)
+			cmd.Printf("   Workspace ID: %d\n", task.WorkspaceID)
 			cmd.Printf("   Workspace Path: %s\n", task.WorkspacePath)
 			cmd.Printf("   Branch: %s\n", task.BranchName)
 			if description != "" {
@@ -764,6 +798,8 @@ func (app *App) addTaskCommands() {
 	startCmd.Flags().IntP("priority", "p", 0, "Priority of the task (higher number = higher priority)")
 	startCmd.Flags().String("ticket-id", "", "External ticket ID (e.g., GitHub #123)")
 	startCmd.Flags().String("url", "", "Optional URL related to the task")
+	startCmd.Flags().String("source-repo", ".", "Source repository path or URL (default: current directory)")
+	startCmd.Flags().String("base-branch", "main", "Base branch for the workspace (default: main)")
 	startCmd.Flags().Int("estimated-minutes", 0, "Estimated completion time in minutes")
 	startCmd.Flags().Float64("estimated-cost", 0, "Estimated cost for AI agent usage")
 	startCmd.Flags().String("currency", "USD", "Currency for cost tracking")
@@ -859,7 +895,7 @@ func (app *App) addTaskCommands() {
 			cmd.Printf("📋 Task Details\n")
 			cmd.Printf("==============\n\n")
 			cmd.Printf("Name: %s\n", task.Name)
-			cmd.Printf("ID: %s\n", task.ID)
+			cmd.Printf("ID: %d\n", task.ID)
 			cmd.Printf("Status: %s\n", task.Status)
 			cmd.Printf("Priority: %d\n", task.Priority)
 			cmd.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
@@ -897,8 +933,8 @@ func (app *App) addTaskCommands() {
 				cmd.Printf("Actual Time: %d minutes\n", task.ActualMinutes)
 			}
 
-			if task.WorkspaceID != "" {
-				cmd.Printf("Workspace ID: %s\n", task.WorkspaceID)
+			if task.WorkspaceID != 0 {
+				cmd.Printf("Workspace ID: %d\n", task.WorkspaceID)
 			}
 
 			if task.WorkspacePath != "" {
@@ -1004,7 +1040,7 @@ func (app *App) addTaskCommands() {
 			}
 
 			cmd.Printf("✅ Task updated successfully!\n")
-			cmd.Printf("   ID: %s\n", updatedTask.ID)
+			cmd.Printf("   ID: %d\n", updatedTask.ID)
 			cmd.Printf("   Name: %s\n", updatedTask.Name)
 			cmd.Printf("   Status: %s\n", updatedTask.Status)
 			cmd.Printf("   Priority: %d\n", updatedTask.Priority)
@@ -1058,7 +1094,7 @@ func (app *App) addTaskCommands() {
 				return nil
 			}
 
-			err = app.taskManager.DeleteTask(task.ID)
+			err = app.taskManager.DeleteTask(fmt.Sprintf("%d", task.ID))
 			if err != nil {
 				return fmt.Errorf("failed to delete task: %w", err)
 			}
@@ -1099,7 +1135,7 @@ func (app *App) addTaskCommands() {
 			}
 
 			// Get workspace path
-			workspacePath, err := app.taskManager.GetTaskWorkspacePath(task.ID)
+			workspacePath, err := app.taskManager.GetTaskWorkspacePath(fmt.Sprintf("%d", task.ID))
 			if err != nil {
 				return err
 			}
@@ -1142,7 +1178,7 @@ func (app *App) addTaskCommands() {
 			}
 
 			// Get workspace path
-			workspacePath, err := app.taskManager.GetTaskWorkspacePath(task.ID)
+			workspacePath, err := app.taskManager.GetTaskWorkspacePath(fmt.Sprintf("%d", task.ID))
 			if err != nil {
 				return err
 			}
@@ -1182,7 +1218,7 @@ func (app *App) addTaskCommands() {
 			}
 
 			// Run git command in task workspace
-			return app.taskManager.RunGitInTaskWorkspace(task.ID, gitArgs)
+			return app.taskManager.RunGitInTaskWorkspace(fmt.Sprintf("%d", task.ID), gitArgs)
 		},
 	}
 
@@ -1203,7 +1239,7 @@ func (app *App) addTaskCommands() {
 
 			cmd.Printf("🎯 Next Task in Queue\n")
 			cmd.Printf("   Name: %s\n", nextTask.Name)
-			cmd.Printf("   ID: %s\n", nextTask.ID)
+			cmd.Printf("   ID: %d\n", nextTask.ID)
 			cmd.Printf("   Priority: %d\n", nextTask.Priority)
 			cmd.Printf("   Status: %s\n", nextTask.Status)
 			if nextTask.Description != "" {
@@ -1228,7 +1264,7 @@ func (app *App) addTaskCommands() {
 				return fmt.Errorf("task manager not initialized")
 			}
 
-			stats, err := app.taskManager.GetTaskStats(nil)
+			stats, err := app.taskManager.GetTaskStats()
 			if err != nil {
 				return fmt.Errorf("failed to get task stats: %w", err)
 			}

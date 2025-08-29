@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -428,7 +429,7 @@ func TestTaskDescribeCommand(t *testing.T) {
 		t.Errorf("Output should show task name, got: %s", outputStr)
 	}
 
-	if !strings.Contains(outputStr, "ID: "+task.ID) {
+	if !strings.Contains(outputStr, "ID: "+fmt.Sprintf("%d", task.ID)) {
 		t.Errorf("Output should show task ID, got: %s", outputStr)
 	}
 
@@ -780,8 +781,8 @@ func TestTaskStartCommand(t *testing.T) {
 		t.Errorf("Expected task status 'in_progress', got '%s'", task.Status)
 	}
 
-	if task.WorkspaceID == "" {
-		t.Errorf("Expected task to have workspace ID, got empty")
+	if task.WorkspaceID == 0 {
+		t.Errorf("Expected task to have workspace ID, got 0")
 	}
 
 	if task.WorkspacePath == "" {
@@ -861,7 +862,7 @@ func TestTaskStartCommand_ExistingTask(t *testing.T) {
 	}
 
 	// Verify task was updated
-	updatedTask, err := app.taskManager.GetTask(task.ID)
+	updatedTask, err := app.taskManager.GetTask(fmt.Sprintf("%d", task.ID))
 	if err != nil {
 		t.Fatalf("Failed to get updated task: %v", err)
 	}
@@ -870,8 +871,8 @@ func TestTaskStartCommand_ExistingTask(t *testing.T) {
 		t.Errorf("Expected task status 'in_progress', got '%s'", updatedTask.Status)
 	}
 
-	if updatedTask.WorkspaceID == "" {
-		t.Errorf("Expected task to have workspace ID, got empty")
+	if updatedTask.WorkspaceID == 0 {
+		t.Errorf("Expected task to have workspace ID, got 0")
 	}
 
 	// Verify workspace was created by checking the workspace path
@@ -1337,7 +1338,7 @@ func TestTaskUpdateCommand_WithCostTracking(t *testing.T) {
 	}
 
 	// Verify task was actually updated
-	updatedTask, err := app.taskManager.GetTask(task.ID)
+	updatedTask, err := app.taskManager.GetTask(fmt.Sprintf("%d", task.ID))
 	if err != nil {
 		t.Fatalf("Failed to get updated task: %v", err)
 	}

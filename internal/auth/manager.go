@@ -118,14 +118,20 @@ func (m *Manager) RemoveAuth(providerType git.ProviderType, scope AuthScope) err
 
 // ListAuthConfigs lists all authentication configurations
 func (m *Manager) ListAuthConfigs() ([]*AuthConfig, error) {
-	configs, err := m.authStore.List("")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list auth configs: %w", err)
-	}
-
+	// Try to get configs for all known provider types and scopes
 	var result []*AuthConfig
-	for _, config := range configs {
-		result = append(result, config)
+
+	providers := []git.ProviderType{git.ProviderGitHub, git.ProviderGitLab, git.ProviderBitbucket}
+	scopes := []AuthScope{AuthScopeGlobal, AuthScopeProject}
+
+	for _, provider := range providers {
+		for _, scope := range scopes {
+			config, err := m.GetAuthConfig(provider, scope)
+			if err == nil {
+				result = append(result, config)
+			}
+			// Ignore errors - configs that don't exist will return errors
+		}
 	}
 
 	return result, nil

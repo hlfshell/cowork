@@ -104,7 +104,7 @@ func (req *CreateTaskRequest) Validate() error {
 // Task represents a queued task to be worked on
 type Task struct {
 	// Unique identifier for the task (matches workspace ID)
-	ID string `json:"id"`
+	ID int `json:"id,string"`
 
 	// Human-readable name for the task (matches workspace name)
 	Name string `json:"name"`
@@ -157,7 +157,7 @@ type Task struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 
 	// Workspace information (if workspace has been created)
-	WorkspaceID   string `json:"workspace_id,omitempty"`
+	WorkspaceID   int    `json:"workspace_id,omitempty,string"`
 	WorkspacePath string `json:"workspace_path,omitempty"`
 	BranchName    string `json:"branch_name,omitempty"`
 	SourceRepo    string `json:"source_repo,omitempty"`
@@ -167,7 +167,7 @@ type Task struct {
 // UpdateTaskRequest contains the parameters for updating a task
 type UpdateTaskRequest struct {
 	// Task ID to update
-	TaskID string `json:"task_id"`
+	TaskID int `json:"task_id,string"`
 
 	// New status (optional)
 	Status *TaskStatus `json:"status,omitempty"`
@@ -203,7 +203,7 @@ type UpdateTaskRequest struct {
 	ErrorMessage *string `json:"error_message,omitempty"`
 
 	// Workspace information (optional)
-	WorkspaceID   *string `json:"workspace_id,omitempty"`
+	WorkspaceID   *int    `json:"workspace_id,omitempty,string"`
 	WorkspacePath *string `json:"workspace_path,omitempty"`
 	BranchName    *string `json:"branch_name,omitempty"`
 	SourceRepo    *string `json:"source_repo,omitempty"`
@@ -212,7 +212,7 @@ type UpdateTaskRequest struct {
 
 // Validate checks if the update task request is valid
 func (req *UpdateTaskRequest) Validate() error {
-	if req.TaskID == "" {
+	if req.TaskID == 0 {
 		return fmt.Errorf("task ID is required")
 	}
 
