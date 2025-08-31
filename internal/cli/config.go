@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/hlfshell/cowork/internal/config"
-
 	"github.com/spf13/cobra"
 )
 
@@ -55,11 +54,9 @@ func (app *App) addConfigCommands() {
 			// args[0] is provider name, args[1] is action
 			switch args[1] {
 			case "login":
-				// return app.loginProvider(cmd, args[0])
-				return nil
+				return app.loginProvider(cmd, args[0])
 			case "test":
-				// return app.testProvider(cmd, args[0])
-				return nil
+				return app.testProvider(cmd, args[0])
 			default:
 				return fmt.Errorf("unknown action: %s. Valid actions: login, test", args[1])
 			}
@@ -67,54 +64,19 @@ func (app *App) addConfigCommands() {
 	}
 	configCmd.AddCommand(providerCmd)
 
-	// Add flags for provider command (these will be used for login and test)
-	// providerCmd.Flags().String("method", "token", "Authentication method (token, basic)")
-	// providerCmd.Flags().String("token", "", "API token for token authentication")
-	// providerCmd.Flags().String("username", "", "Username for basic authentication")
-	// providerCmd.Flags().String("password", "", "Password for basic authentication")
-	// providerCmd.Flags().String("scope", "global", "Scope for authentication (global, project)")
-
-	// Agent command
-	// agentCmd := &cobra.Command{
-	// 	Use:   "agent",
-	// 	Short: "Configure AI agent settings",
-	// 	Long:  "Configure settings for AI agents (docker image, command structure, keys, etc.)",
-	// 	RunE: func(cmd *cobra.Command, args []string) error {
-	// 		return app.configureAgent(cmd)
-	// 	},
-	// }
-
 	// Add git commands
 	gitCmd := addGitCommands(app)
 	configCmd.AddCommand(gitCmd)
+
+	// Add container commands
+	containerCmd := addContainerCommands(app)
+	configCmd.AddCommand(containerCmd)
 
 	// Add agent env commands
 	agentCmd := addAgentCommands(app)
 	configCmd.AddCommand(agentCmd)
 
-	// // Save command
-	saveCmd := &cobra.Command{
-		Use:   "save [filename]",
-		Short: "Save configuration to YAML file",
-		Long:  "Save current local configuration settings to a YAML file",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return app.saveConfig(cmd, args[0])
-		},
-	}
-
-	// // Load command
-	loadCmd := &cobra.Command{
-		Use:   "load [filename]",
-		Short: "Load configuration from YAML file",
-		Long:  "Load configuration settings from a YAML file into local settings",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return app.loadConfig(cmd, args[0])
-		},
-	}
-
-	configCmd.AddCommand(showCmd, saveCmd, loadCmd)
+	configCmd.AddCommand(showCmd)
 	app.rootCmd.AddCommand(configCmd)
 }
 
@@ -129,25 +91,14 @@ func (app *App) showConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-// saveConfig saves the current configuration settings to a YAML file
-func (app *App) saveConfig(cmd *cobra.Command, filename string) error {
-	app.configManager.Load()
-	app.configManager.SaveToFile(filename)
-	return nil
-}
-
-// loadConfig loads the configuration settings from a YAML file
-func (app *App) loadConfig(cmd *cobra.Command, filename string) error {
-	app.configManager.LoadFromFile(filename)
-	return nil
-}
-
-// setEnvVar sets an environment variable
+// setEnvVar sets an environment variable with scope support
 func (app *App) setEnvVar(cmd *cobra.Command, args []string) error {
 	// Parse the key-value pair
 	var key, value string
 
-	if len(args) == 1 {
+	if len(args) == 0 {
+		return fmt.Errorf("invalid number of arguments - you must specify the key and value either by 'set key value' or 'set key=value'")
+	} else if len(args) == 1 {
 		// Single argument: check if it's in key=value format
 		keyValue := args[0]
 		if idx := strings.Index(keyValue, "="); idx != -1 {
@@ -174,17 +125,23 @@ func (app *App) setEnvVar(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	err = app.configManager.SetEnvVar(key, value)
+	// Determine scope
+	scopeFlag, _ := cmd.Flags().GetString("scope")
+	if scopeFlag == "global" {
+		err = app.configManager.SetEnvVarScoped(key, value, config.EnvScopeGlobal)
+	} else {
+		err = app.configManager.SetEnvVarScoped(key, value, config.EnvScopeProject)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to set environment variable: %w", err)
 	}
 
-	cmd.Printf("✅ Environment variable '%s' set successfully\n", key)
+	cmd.Printf("✅ Environment variable '%s' set successfully (%s scope)\n", key, scopeFlag)
 
 	return nil
 }
 
-// getEnvVar retrieves an environment variable value
+// getEnvVar retrieves an environment variable value with optional scope filtering
 func (app *App) getEnvVar(cmd *cobra.Command, key string) error {
 	if key == "" {
 		return fmt.Errorf("environment variable key cannot be empty")
@@ -196,13 +153,37 @@ func (app *App) getEnvVar(cmd *cobra.Command, key string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	value, err := app.configManager.GetEnvVar(key)
-	if err != nil {
-		return fmt.Errorf("failed to get environment variable: %w", err)
-	}
-	cmd.Printf("%s=%s\n", key, value)
-	return nil
+	scopeFlag, _ := cmd.Flags().GetString("scope")
 
+	if scopeFlag == "" {
+		// No scope specified - check both and show which scope was used
+		value, scope, err := app.configManager.GetEnvVarWithFallback(key)
+		if err != nil {
+			return fmt.Errorf("environment variable '%s' not found in any scope", key)
+		}
+		cmd.Printf("%s=%s (%s scope)\n", key, value, scope)
+	} else {
+		// Specific scope requested
+		var value string
+		switch scopeFlag {
+		case "project":
+			value, err = app.configManager.GetEnvVarScoped(key, config.EnvScopeProject)
+			if err != nil {
+				return fmt.Errorf("environment variable '%s' not found in project scope", key)
+			}
+			cmd.Printf("%s=%s (project scope)\n", key, value)
+		case "global":
+			value, err = app.configManager.GetEnvVarScoped(key, config.EnvScopeGlobal)
+			if err != nil {
+				return fmt.Errorf("environment variable '%s' not found in global scope", key)
+			}
+			cmd.Printf("%s=%s (global scope)\n", key, value)
+		default:
+			return fmt.Errorf("invalid scope: %s. Valid scopes: project, global", scopeFlag)
+		}
+	}
+
+	return nil
 }
 
 func (app *App) listEnvVars(cmd *cobra.Command) error {
@@ -212,24 +193,125 @@ func (app *App) listEnvVars(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	envVars, err := app.configManager.GetEnvVars()
-	if err != nil {
-		return fmt.Errorf("failed to get environment variables: %w", err)
+	scope, _ := cmd.Flags().GetString("scope")
+
+	switch scope {
+	case "project":
+		envVars, err := app.configManager.GetEnvVarsScoped(config.EnvScopeProject)
+		if err != nil {
+			return fmt.Errorf("failed to get project environment variables: %w", err)
+		}
+		if len(envVars) == 0 {
+			cmd.Println("No project environment variables found.")
+			return nil
+		}
+		cmd.Println("Project environment variables:")
+		for key, value := range envVars {
+			cmd.Printf("  %s=%s\n", key, value)
+		}
+	case "global":
+		envVars, err := app.configManager.GetEnvVarsScoped(config.EnvScopeGlobal)
+		if err != nil {
+			return fmt.Errorf("failed to get global environment variables: %w", err)
+		}
+		if len(envVars) == 0 {
+			cmd.Println("No global environment variables found.")
+			return nil
+		}
+		cmd.Println("Global environment variables:")
+		for key, value := range envVars {
+			cmd.Printf("  %s=%s\n", key, value)
+		}
+	case "all":
+		// Show both project and global
+		projectEnvVars, err := app.configManager.GetEnvVarsScoped(config.EnvScopeProject)
+		if err != nil {
+			return fmt.Errorf("failed to get project environment variables: %w", err)
+		}
+		globalEnvVars, err := app.configManager.GetEnvVarsScoped(config.EnvScopeGlobal)
+		if err != nil {
+			return fmt.Errorf("failed to get global environment variables: %w", err)
+		}
+
+		if len(projectEnvVars) == 0 && len(globalEnvVars) == 0 {
+			cmd.Println("No environment variables found.")
+			return nil
+		}
+
+		if len(projectEnvVars) > 0 {
+			cmd.Println("Project environment variables:")
+			for key, value := range projectEnvVars {
+				cmd.Printf("  %s=%s\n", key, value)
+			}
+		}
+
+		if len(globalEnvVars) > 0 {
+			if len(projectEnvVars) > 0 {
+				cmd.Println()
+			}
+			cmd.Println("Global environment variables:")
+			for key, value := range globalEnvVars {
+				cmd.Printf("  %s=%s\n", key, value)
+			}
+		}
+	default:
+		return fmt.Errorf("invalid scope: %s. Valid scopes: project, global, all", scope)
 	}
 
-	if len(envVars) == 0 {
-		cmd.Println("No environment variables found.")
-		return nil
-	}
-
-	cmd.Println("Environment variables:")
-	for key, value := range envVars {
-		cmd.Printf("  %s=%s\n", key, value)
-	}
 	return nil
 }
 
-// loadEnvFile loads environment variables from a file
+// deleteEnvVar deletes an environment variable with scope support
+func (app *App) deleteEnvVar(cmd *cobra.Command, key string) error {
+	if key == "" {
+		return fmt.Errorf("environment variable key cannot be empty")
+	}
+
+	// Load configuration first to ensure it's initialized
+	_, err := app.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	scope, _ := cmd.Flags().GetString("scope")
+
+	switch scope {
+	case "project":
+		err = app.configManager.DeleteEnvVarScoped(key, config.EnvScopeProject)
+		if err != nil {
+			return fmt.Errorf("failed to delete environment variable from project scope: %w", err)
+		}
+		cmd.Printf("✅ Environment variable '%s' deleted from project scope\n", key)
+	case "global":
+		err = app.configManager.DeleteEnvVarScoped(key, config.EnvScopeGlobal)
+		if err != nil {
+			return fmt.Errorf("failed to delete environment variable from global scope: %w", err)
+		}
+		cmd.Printf("✅ Environment variable '%s' deleted from global scope\n", key)
+	case "both":
+		// Try to delete from both scopes, don't error if not found in one
+		projectErr := app.configManager.DeleteEnvVarScoped(key, config.EnvScopeProject)
+		globalErr := app.configManager.DeleteEnvVarScoped(key, config.EnvScopeGlobal)
+
+		if projectErr != nil && globalErr != nil {
+			return fmt.Errorf("failed to delete environment variable from both scopes: project: %v, global: %v", projectErr, globalErr)
+		}
+
+		if projectErr == nil && globalErr == nil {
+			cmd.Printf("✅ Environment variable '%s' deleted from both scopes\n", key)
+		} else if projectErr == nil {
+			cmd.Printf("✅ Environment variable '%s' deleted from project scope (not found in global)\n", key)
+		} else {
+			cmd.Printf("✅ Environment variable '%s' deleted from global scope (not found in project)\n", key)
+		}
+	default:
+		return fmt.Errorf("invalid scope: %s. Valid scopes: project, global, both", scope)
+	}
+
+	return nil
+}
+
+// loadEnvFile loads environment variables from a file with scope support
 func (app *App) loadEnvFile(cmd *cobra.Command, filename string) error {
 	// Load configuration first to ensure it's initialized
 	_, err := app.configManager.Load()
@@ -237,12 +319,21 @@ func (app *App) loadEnvFile(cmd *cobra.Command, filename string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Determine scope
+	scopeFlag, _ := cmd.Flags().GetString("scope")
+
+	// TODO: Need to implement SetEnvFromFileScoped in config manager
+	// For now, use the existing method which only supports project scope
+	if scopeFlag == "global" {
+		return fmt.Errorf("global scope for file import not yet implemented")
+	}
+
 	err = app.configManager.SetEnvFromFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to load environment variables from file: %w", err)
 	}
 
-	cmd.Printf("✅ Environment variables loaded from %s\n", filename)
+	cmd.Printf("✅ Environment variables loaded from %s (%s scope)\n", filename, scopeFlag)
 	return nil
 }
 

@@ -88,37 +88,61 @@ func (m *Manager) Load() (*Config, error) {
 	}
 
 	// Load environment variables
-	if m.config.envStore == nil {
+	if config.envStore == nil {
 		var err error
-		m.config.envStore, err = secure_store.NewSecureStore(".env", m.ProjectConfigPath)
+		config.envStore, err = secure_store.NewSecureStore(".env", m.ProjectConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create environment store: %w", err)
 		}
 	}
-	if env_vars, err := m.GetEnvVars(); err != nil {
+
+	// Load env vars directly from the config's store, not manager state
+	if env_vars, err := m.getEnvVarsFromStore(config.envStore); err != nil {
 		return nil, fmt.Errorf("failed to load environment variables: %w", err)
 	} else {
 		config.Env = env_vars
 	}
 
+	// Only set manager's config after everything is loaded successfully
 	m.config = config
 	return config, nil
+}
+
+// getEnvVarsFromStore loads environment variables from a specific store
+// This is used during Load() to avoid dependency on manager state
+func (m *Manager) getEnvVarsFromStore(store *secure_store.SecureStore) (map[string]string, error) {
+	keys, err := store.List("")
+	if err != nil {
+		return nil, err
+	}
+
+	envVars := make(map[string]string)
+	for _, key := range keys {
+		var value string
+		err := store.Get(key, &value)
+		if err != nil {
+			return nil, err
+		}
+		envVars[key] = value
+	}
+	return envVars, nil
 }
 
 // SaveGlobal saves the configuration to the global config file
 func (m *Manager) SaveGlobal(config *Config) error {
 	// Ensure the directory exists
-	configDir := filepath.Dir(m.GlobalConfigPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(m.GlobalConfigPath, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	return m.SaveConfig(config, m.GlobalConfigPath)
+	configFilePath := filepath.Join(m.GlobalConfigPath, "config.yaml")
+	return m.SaveConfig(config, configFilePath)
 }
 
 // SaveProject saves the configuration to the project config file
 func (m *Manager) SaveProject(config *Config) error {
-	return m.SaveConfig(config, m.ProjectConfigPath)
+	configFilePath := filepath.Join(m.ProjectConfigPath, "config.yaml")
+	return m.SaveConfig(config, configFilePath)
 }
 
 // GetConfig returns the current configuration
@@ -128,12 +152,13 @@ func (m *Manager) GetConfig() *Config {
 
 // loadGlobalConfig loads configuration from the global config file
 func (m *Manager) loadGlobalConfig(config *Config) error {
-	if _, err := os.Stat(m.GlobalConfigPath); os.IsNotExist(err) {
+	configFilePath := filepath.Join(m.GlobalConfigPath, "config.yaml")
+	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
 		// Global config doesn't exist, create it with defaults
 		return m.SaveGlobal(config)
 	}
 
-	data, err := os.ReadFile(m.GlobalConfigPath)
+	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read global config file: %w", err)
 	}
@@ -150,12 +175,13 @@ func (m *Manager) loadGlobalConfig(config *Config) error {
 
 // loadProjectConfig loads configuration from the project config file
 func (m *Manager) loadProjectConfig(config *Config) error {
-	if _, err := os.Stat(m.ProjectConfigPath); os.IsNotExist(err) {
+	configFilePath := filepath.Join(m.ProjectConfigPath, "config.yaml")
+	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
 		// Project config doesn't exist, that's fine
 		return nil
 	}
 
-	data, err := os.ReadFile(m.ProjectConfigPath)
+	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read project config file: %w", err)
 	}

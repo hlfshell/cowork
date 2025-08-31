@@ -3,9 +3,13 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/hlfshell/cowork/internal/config"
+	"github.com/hlfshell/cowork/internal/git"
 	"github.com/hlfshell/cowork/internal/task"
+	"github.com/hlfshell/cowork/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -31,8 +35,8 @@ func NewApp(version, buildDate, gitCommit string) *App {
 	}
 
 	// Initialize task manager (which now handles workspaces)
-	cwDir := filepath.Join(".", ".cowork")
-	taskManager, err := task.NewManager(cwDir, 300)
+	coworkDir := filepath.Join(".", ".cowork")
+	taskManager, err := task.NewManager(coworkDir, 300)
 	if err != nil {
 		fmt.Printf("Warning: failed to initialize task manager: %v\n", err)
 		taskManager = nil
@@ -73,11 +77,11 @@ func (app *App) setupCommands() {
 	// Add config commands
 	app.addConfigCommands()
 
-	// // Add task commands (which now handle workspaces)
-	// app.addTaskCommands()
+	// Add task commands (which now handle workspaces)
+	app.addTaskCommands()
 
-	// // Add go command for workflow automation
-	// app.addGoCommand()
+	// Add go command for workflow automation
+	app.addGoCommand()
 }
 
 // addVersionCommand adds a detailed version command
@@ -113,127 +117,127 @@ func (app *App) addInitCommand() {
 	app.rootCmd.AddCommand(initCmd)
 }
 
-// // addTaskCommands adds task management commands (which now include workspace management)
-// func (app *App) addTaskCommands() {
-// 	taskCmd := &cobra.Command{
-// 		Use:   "task",
-// 		Short: "Manage tasks and their workspaces",
-// 		Long:  "Create, list, describe, and manage tasks. Workspaces and tasks are always synced and have the same ID.",
-// 	}
+// addTaskCommands adds task management commands (which now include workspace management)
+func (app *App) addTaskCommands() {
+	taskCmd := &cobra.Command{
+		Use:   "task",
+		Short: "Manage tasks and their workspaces",
+		Long:  "Create, list, describe, and manage tasks. Workspaces and tasks are always synced and have the same ID.",
+	}
 
-// 	// List command
-// 	listCmd := &cobra.Command{
-// 		Use:   "list",
-// 		Short: "List all tasks",
-// 		Long:  "Display all tasks with their status, priority, and basic information",
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.listTasks(cmd)
-// 		},
-// 	}
+	// List command
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all tasks",
+		Long:  "Display all tasks with their status, priority, and basic information",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.listTasks(cmd)
+		},
+	}
 
-// 	// Sync command
-// 	syncCmd := &cobra.Command{
-// 		Use:   "sync",
-// 		Short: "Sync tasks from git provider",
-// 		Long:  "Sync down tasks and statuses from associated git provider",
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.syncTasks(cmd)
-// 		},
-// 	}
+	// Sync command
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Sync tasks from git provider",
+		Long:  "Sync down tasks and statuses from associated git provider",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.syncTasks(cmd)
+		},
+	}
 
-// 	// Describe command
-// 	describeCmd := &cobra.Command{
-// 		Use:   "describe [task-id-or-name]",
-// 		Short: "Show detailed task information",
-// 		Long:  "Display detailed information about a specific task including workspace details",
-// 		Args:  cobra.ExactArgs(1),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.describeTask(cmd, args[0])
-// 		},
-// 	}
+	// Describe command
+	describeCmd := &cobra.Command{
+		Use:   "describe [task-id-or-name]",
+		Short: "Show detailed task information",
+		Long:  "Display detailed information about a specific task including workspace details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.describeTask(cmd, args[0])
+		},
+	}
 
-// 	// Priority command
-// 	priorityCmd := &cobra.Command{
-// 		Use:   "priority [task-id-or-name] [priority]",
-// 		Short: "Change task priority",
-// 		Long:  "Change the priority of a task. Use 'freeze' as priority to prevent execution until 'unfreeze' is called.",
-// 		Args:  cobra.ExactArgs(2),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.setTaskPriority(cmd, args[0], args[1])
-// 		},
-// 	}
+	// Priority command
+	priorityCmd := &cobra.Command{
+		Use:   "priority [task-id-or-name] [priority]",
+		Short: "Change task priority",
+		Long:  "Change the priority of a task. Use 'freeze' as priority to prevent execution until 'unfreeze' is called.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.setTaskPriority(cmd, args[0], args[1])
+		},
+	}
 
-// 	// Start command
-// 	startCmd := &cobra.Command{
-// 		Use:   "start [task-id-or-name]",
-// 		Short: "Start working on a task",
-// 		Long:  "Start a task with the agent if possible and report status back",
-// 		Args:  cobra.ExactArgs(1),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.startTask(cmd, args[0])
-// 		},
-// 	}
+	// Start command
+	startCmd := &cobra.Command{
+		Use:   "start [task-id-or-name]",
+		Short: "Start working on a task",
+		Long:  "Start a task with the agent if possible and report status back",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.startTask(cmd, args[0])
+		},
+	}
 
-// 	// Stop command
-// 	stopCmd := &cobra.Command{
-// 		Use:   "stop [task-id-or-name]",
-// 		Short: "Stop a task",
-// 		Long:  "Stop a task (pause if possible, otherwise full stop)",
-// 		Args:  cobra.ExactArgs(1),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.stopTask(cmd, args[0])
-// 		},
-// 	}
+	// Stop command
+	stopCmd := &cobra.Command{
+		Use:   "stop [task-id-or-name]",
+		Short: "Stop a task",
+		Long:  "Stop a task (pause if possible, otherwise full stop)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.stopTask(cmd, args[0])
+		},
+	}
 
-// 	// Kill command
-// 	killCmd := &cobra.Command{
-// 		Use:   "kill [task-id-or-name]",
-// 		Short: "Force kill a task",
-// 		Long:  "Forcibly kill the agent container if it's working",
-// 		Args:  cobra.ExactArgs(1),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.killTask(cmd, args[0])
-// 		},
-// 	}
+	// Kill command
+	killCmd := &cobra.Command{
+		Use:   "kill [task-id-or-name]",
+		Short: "Force kill a task",
+		Long:  "Forcibly kill the agent container if it's working",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.killTask(cmd, args[0])
+		},
+	}
 
-// 	// Logs command
-// 	logsCmd := &cobra.Command{
-// 		Use:   "logs [task-id-or-name]",
-// 		Short: "Show task logs",
-// 		Long:  "Show the log output of the agent as it works. Use --tail or -t for continuous output.",
-// 		Args:  cobra.ExactArgs(1),
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.showTaskLogs(cmd, args[0])
-// 		},
-// 	}
+	// Logs command
+	logsCmd := &cobra.Command{
+		Use:   "logs [task-id-or-name]",
+		Short: "Show task logs",
+		Long:  "Show the log output of the agent as it works. Use --tail or -t for continuous output.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.showTaskLogs(cmd, args[0])
+		},
+	}
 
-// 	// Add tail flag to logs command
-// 	logsCmd.Flags().BoolP("tail", "t", false, "Continuously show logs")
+	// Add tail flag to logs command
+	logsCmd.Flags().BoolP("tail", "t", false, "Continuously show logs")
 
-// 	taskCmd.AddCommand(listCmd, syncCmd, describeCmd, priorityCmd, startCmd, stopCmd, killCmd, logsCmd)
-// 	app.rootCmd.AddCommand(taskCmd)
-// }
+	taskCmd.AddCommand(listCmd, syncCmd, describeCmd, priorityCmd, startCmd, stopCmd, killCmd, logsCmd)
+	app.rootCmd.AddCommand(taskCmd)
+}
 
-// // addGoCommand adds the workflow automation command
-// func (app *App) addGoCommand() {
-// 	goCmd := &cobra.Command{
-// 		Use:   "go",
-// 		Short: "Start workflow automation",
-// 		Long:  "Start a workflow that pulls down issues/PRs, runs up to N agents, and manages the workflow automatically",
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			return app.startWorkflow(cmd)
-// 		},
-// 	}
+// addGoCommand adds the workflow automation command
+func (app *App) addGoCommand() {
+	goCmd := &cobra.Command{
+		Use:   "go",
+		Short: "Start workflow automation",
+		Long:  "Start a workflow that pulls down issues/PRs, runs up to N agents, and manages the workflow automatically",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.startWorkflow(cmd)
+		},
+	}
 
-// 	// Add flags for workflow configuration
-// 	goCmd.Flags().IntP("max-agents", "n", 1, "Maximum number of concurrent agents")
-// 	goCmd.Flags().String("provider", "github", "Git provider to use (github, gitlab, bitbucket)")
-// 	goCmd.Flags().String("repo", "", "Repository to monitor (default: current repo)")
+	// Add flags for workflow configuration
+	goCmd.Flags().IntP("max-agents", "n", 1, "Maximum number of concurrent agents")
+	goCmd.Flags().String("provider", "github", "Git provider to use (github, gitlab, bitbucket)")
+	goCmd.Flags().String("repo", "", "Repository to monitor (default: current repo)")
 
-// 	app.rootCmd.AddCommand(goCmd)
-// }
+	app.rootCmd.AddCommand(goCmd)
+}
 
-// // Run executes the CLI application with the given arguments
+// Run executes the CLI application with the given arguments
 func (app *App) Run(args []string) error {
 	app.rootCmd.SetArgs(args[1:]) // Skip the program name
 	return app.rootCmd.Execute()
@@ -412,221 +416,222 @@ func (app *App) Run(args []string) error {
 // 	return nil
 // }
 
-// // Task command implementations
-// func (app *App) listTasks(cmd *cobra.Command) error {
-// 	if app.taskManager == nil {
-// 		return fmt.Errorf("task manager not initialized")
-// 	}
+// Task command implementations
+func (app *App) listTasks(cmd *cobra.Command) error {
+	if app.taskManager == nil {
+		return fmt.Errorf("task manager not initialized")
+	}
 
-// 	tasks, err := app.taskManager.ListTasks(nil)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to list tasks: %w", err)
-// 	}
+	tasks, err := app.taskManager.ListTasks(nil)
+	if err != nil {
+		return fmt.Errorf("failed to list tasks: %w", err)
+	}
 
-// 	if len(tasks) == 0 {
-// 		cmd.Println("No tasks found.")
-// 		return nil
-// 	}
+	if len(tasks) == 0 {
+		cmd.Println("No tasks found.")
+		return nil
+	}
 
-// 	cmd.Printf("Found %d task(s):\n\n", len(tasks))
-// 	for _, task := range tasks {
-// 		statusIcon := getStatusIcon(task.Status)
-// 		cmd.Printf("%s %s (priority: %d, status: %s)\n", statusIcon, task.Name, task.Priority, task.Status)
-// 		if task.Description != "" {
-// 			shortDesc := truncateString(task.Description, 80)
-// 			cmd.Printf("   %s\n", shortDesc)
-// 		}
-// 		cmd.Println()
-// 	}
+	cmd.Printf("Found %d task(s):\n\n", len(tasks))
+	for _, task := range tasks {
+		statusIcon := getStatusIcon(task.Status)
+		cmd.Printf("%s %s (priority: %d, status: %s)\n", statusIcon, task.Name, task.Priority, task.Status)
+		if task.Description != "" {
+			shortDesc := truncateString(task.Description, 80)
+			cmd.Printf("   %s\n", shortDesc)
+		}
+		cmd.Println()
+	}
 
-// 	return nil
-// }
+	return nil
+}
 
-// func (app *App) syncTasks(cmd *cobra.Command) error {
-// 	if app.taskManager == nil {
-// 		return fmt.Errorf("task manager not initialized")
-// 	}
+func (app *App) syncTasks(cmd *cobra.Command) error {
+	if app.taskManager == nil {
+		return fmt.Errorf("task manager not initialized")
+	}
 
-// 	cmd.Printf("🔄 Syncing tasks from Git provider...\n")
+	cmd.Printf("🔄 Syncing tasks from Git provider...\n")
 
-// 	// Get current repository info
-// 	repoPath := "."
-// 	repoInfo, err := git.GetRepositoryInfo(repoPath)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get repository info: %w", err)
-// 	}
+	// Get current repository info
+	repoPath := "."
+	repoInfo, err := git.GetRepositoryInfo(repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to get repository info: %w", err)
+	}
 
-// 	// For now, default to GitHub and require manual specification
-// 	// TODO: Implement proper provider detection and owner/repo extraction
-// 	cmd.Printf("📁 Repository: %s\n", repoInfo.RemoteURL)
-// 	cmd.Printf("⚠️  Provider detection not yet implemented, defaulting to GitHub\n")
+	// For now, default to GitHub and require manual specification
+	// TODO: Implement proper provider detection and owner/repo extraction
+	cmd.Printf("📁 Repository: %s\n", repoInfo.RemoteURL)
+	cmd.Printf("⚠️  Provider detection not yet implemented, defaulting to GitHub\n")
 
-// 	// For now, require manual specification of owner/repo
-// 	cmd.Printf("Please specify owner and repository manually for now\n")
-// 	cmd.Printf("Example: cw task sync --owner hlfshell --repo cowork\n")
+	// For now, require manual specification of owner/repo
+	cmd.Printf("Please specify owner and repository manually for now\n")
+	cmd.Printf("Example: cw task sync --owner hlfshell --repo cowork\n")
 
-// 	return fmt.Errorf("task sync requires manual owner/repo specification. Use --owner and --repo flags")
-// 	return nil
-// }
+	return fmt.Errorf("task sync requires manual owner/repo specification. Use --owner and --repo flags")
+}
 
-// func (app *App) describeTask(cmd *cobra.Command, identifier string) error {
-// 	if app.taskManager == nil {
-// 		return fmt.Errorf("task manager not initialized")
-// 	}
+func (app *App) describeTask(cmd *cobra.Command, identifier string) error {
+	if app.taskManager == nil {
+		return fmt.Errorf("task manager not initialized")
+	}
 
-// 	// Try to find task by ID or name
-// 	var task *types.Task
-// 	var err error
+	// Try to find task by ID or name
+	var task *types.Task
+	var err error
 
-// 	// First try by ID
-// 	task, err = app.taskManager.GetTask(identifier)
-// 	if err != nil {
-// 		// If not found by ID, try by name
-// 		task, err = app.taskManager.GetTaskByName(identifier)
-// 		if err != nil {
-// 			return fmt.Errorf("task not found: %s", identifier)
-// 		}
-// 	}
+	// First try by ID
+	task, err = app.taskManager.GetTask(identifier)
+	if err != nil {
+		// If not found by ID, try by name
+		task, err = app.taskManager.GetTaskByName(identifier)
+		if err != nil {
+			return fmt.Errorf("task not found: %s", identifier)
+		}
+	}
 
-// 	// Display detailed information
-// 	cmd.Printf("📋 Task Details\n")
-// 	cmd.Printf("==============\n\n")
-// 	cmd.Printf("Name: %s\n", task.Name)
-// 	cmd.Printf("ID: %d\n", task.ID)
-// 	cmd.Printf("Status: %s\n", task.Status)
-// 	cmd.Printf("Priority: %d\n", task.Priority)
-// 	cmd.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
-// 	cmd.Printf("Last Activity: %s\n", task.LastActivity.Format("2006-01-02 15:04:05"))
+	// Display detailed information
+	cmd.Printf("📋 Task Details\n")
+	cmd.Printf("==============\n\n")
+	cmd.Printf("Name: %s\n", task.Name)
+	cmd.Printf("ID: %d\n", task.ID)
+	cmd.Printf("Status: %s\n", task.Status)
+	cmd.Printf("Priority: %d\n", task.Priority)
+	cmd.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	cmd.Printf("Last Activity: %s\n", task.LastActivity.Format("2006-01-02 15:04:05"))
 
-// 	if task.WorkspaceID != 0 {
-// 		cmd.Printf("Workspace ID: %d\n", task.WorkspaceID)
-// 	}
+	if task.WorkspaceID != 0 {
+		cmd.Printf("Workspace ID: %d\n", task.WorkspaceID)
+	}
 
-// 	if task.WorkspacePath != "" {
-// 		cmd.Printf("Workspace Path: %s\n", task.WorkspacePath)
-// 	}
+	if task.WorkspacePath != "" {
+		cmd.Printf("Workspace Path: %s\n", task.WorkspacePath)
+	}
 
-// 	if task.Description != "" {
-// 		cmd.Printf("\nDescription:\n")
-// 		cmd.Printf("------------\n")
-// 		cmd.Printf("%s\n", task.Description)
-// 	}
+	if task.Description != "" {
+		cmd.Printf("\nDescription:\n")
+		cmd.Printf("------------\n")
+		cmd.Printf("%s\n", task.Description)
+	}
 
-// 	return nil
-// }
+	return nil
+}
 
-// func (app *App) setTaskPriority(cmd *cobra.Command, identifier, priority string) error {
-// 	if app.taskManager == nil {
-// 		return fmt.Errorf("task manager not initialized")
-// 	}
+func (app *App) setTaskPriority(cmd *cobra.Command, identifier, priority string) error {
+	if app.taskManager == nil {
+		return fmt.Errorf("task manager not initialized")
+	}
 
-// 	// Parse priority
-// 	priorityInt, err := parsePriority(priority)
-// 	if err != nil {
-// 		return fmt.Errorf("invalid priority: %s. Valid priorities: 1-5, low, medium, high, urgent", priority)
-// 	}
+	// Parse priority
+	priorityInt, err := parsePriority(priority)
+	if err != nil {
+		return fmt.Errorf("invalid priority: %s. Valid priorities: 1-5, low, medium, high, urgent", priority)
+	}
 
-// 	// Try to find task by ID or name
-// 	var task *types.Task
-// 	task, err = app.taskManager.GetTask(identifier)
-// 	if err != nil {
-// 		// If not found by ID, try by name
-// 		task, err = app.taskManager.GetTaskByName(identifier)
-// 		if err != nil {
-// 			return fmt.Errorf("task not found: %s", identifier)
-// 		}
-// 	}
+	// Try to find task by ID or name
+	var task *types.Task
+	task, err = app.taskManager.GetTask(identifier)
+	if err != nil {
+		// If not found by ID, try by name
+		task, err = app.taskManager.GetTaskByName(identifier)
+		if err != nil {
+			return fmt.Errorf("task not found: %s", identifier)
+		}
+	}
 
-// 	// Update priority
-// 	oldPriority := task.Priority
-// 	task.Priority = priorityInt
-// 	task.LastActivity = time.Now()
+	// Update priority
+	oldPriority := task.Priority
+	updateReq := &types.UpdateTaskRequest{
+		TaskID:   task.ID,
+		Priority: &priorityInt,
+	}
 
-// 	// Save the updated task
-// 	if err := app.taskManager.UpdateTask(task); err != nil {
-// 		return fmt.Errorf("failed to update task priority: %w", err)
-// 	}
+	// Save the updated task
+	if _, err := app.taskManager.UpdateTask(updateReq); err != nil {
+		return fmt.Errorf("failed to update task priority: %w", err)
+	}
 
-// 	cmd.Printf("✅ Updated task '%s' priority from %d to %d\n", task.Name, oldPriority, priorityInt)
-// 	return nil
-// }
+	cmd.Printf("✅ Updated task '%s' priority from %d to %d\n", task.Name, oldPriority, priorityInt)
+	return nil
+}
 
-// // parsePriority converts priority string to integer
-// func parsePriority(priority string) (int, error) {
-// 	switch strings.ToLower(priority) {
-// 	case "low", "1":
-// 		return 1, nil
-// 	case "medium", "2":
-// 		return 2, nil
-// 	case "high", "3":
-// 		return 3, nil
-// 	case "urgent", "4":
-// 		return 4, nil
-// 	case "critical", "5":
-// 		return 5, nil
-// 	default:
-// 		// Try to parse as integer
-// 		if prio, err := strconv.Atoi(priority); err == nil && prio >= 1 && prio <= 5 {
-// 			return prio, nil
-// 		}
-// 		return 0, fmt.Errorf("invalid priority value")
-// 	}
-// }
+// parsePriority converts priority string to integer
+func parsePriority(priority string) (int, error) {
+	switch strings.ToLower(priority) {
+	case "low", "1":
+		return 1, nil
+	case "medium", "2":
+		return 2, nil
+	case "high", "3":
+		return 3, nil
+	case "urgent", "4":
+		return 4, nil
+	case "critical", "5":
+		return 5, nil
+	default:
+		// Try to parse as integer
+		if prio, err := strconv.Atoi(priority); err == nil && prio >= 1 && prio <= 5 {
+			return prio, nil
+		}
+		return 0, fmt.Errorf("invalid priority value")
+	}
+}
 
-// func (app *App) startTask(cmd *cobra.Command, identifier string) error {
-// 	cmd.Printf("Start task %s - not yet implemented\n", identifier)
-// 	return nil
-// }
+func (app *App) startTask(cmd *cobra.Command, identifier string) error {
+	cmd.Printf("Start task %s - not yet implemented\n", identifier)
+	return nil
+}
 
-// func (app *App) stopTask(cmd *cobra.Command, identifier string) error {
-// 	cmd.Printf("Stop task %s - not yet implemented\n", identifier)
-// 	return nil
-// }
+func (app *App) stopTask(cmd *cobra.Command, identifier string) error {
+	cmd.Printf("Stop task %s - not yet implemented\n", identifier)
+	return nil
+}
 
-// func (app *App) killTask(cmd *cobra.Command, identifier string) error {
-// 	cmd.Printf("Kill task %s - not yet implemented\n", identifier)
-// 	return nil
-// }
+func (app *App) killTask(cmd *cobra.Command, identifier string) error {
+	cmd.Printf("Kill task %s - not yet implemented\n", identifier)
+	return nil
+}
 
-// func (app *App) showTaskLogs(cmd *cobra.Command, identifier string) error {
-// 	tail, _ := cmd.Flags().GetBool("tail")
-// 	cmd.Printf("Show logs for task %s (tail: %v) - not yet implemented\n", identifier, tail)
-// 	return nil
-// }
+func (app *App) showTaskLogs(cmd *cobra.Command, identifier string) error {
+	tail, _ := cmd.Flags().GetBool("tail")
+	cmd.Printf("Show logs for task %s (tail: %v) - not yet implemented\n", identifier, tail)
+	return nil
+}
 
-// // Workflow command implementation
-// func (app *App) startWorkflow(cmd *cobra.Command) error {
-// 	maxAgents, _ := cmd.Flags().GetInt("max-agents")
-// 	provider, _ := cmd.Flags().GetString("provider")
-// 	repo, _ := cmd.Flags().GetString("repo")
+// Workflow command implementation
+func (app *App) startWorkflow(cmd *cobra.Command) error {
+	maxAgents, _ := cmd.Flags().GetInt("max-agents")
+	provider, _ := cmd.Flags().GetString("provider")
+	repo, _ := cmd.Flags().GetString("repo")
 
-// 	cmd.Printf("Start workflow with max %d agents, provider %s, repo %s - not yet implemented\n", maxAgents, provider, repo)
-// 	return nil
-// }
+	cmd.Printf("Start workflow with max %d agents, provider %s, repo %s - not yet implemented\n", maxAgents, provider, repo)
+	return nil
+}
 
-// // Helper functions
-// func getStatusIcon(status types.TaskStatus) string {
-// 	switch status {
-// 	case types.TaskStatusQueued:
-// 		return "⏳"
-// 	case types.TaskStatusInProgress:
-// 		return "🔄"
-// 	case types.TaskStatusCompleted:
-// 		return "✅"
-// 	case types.TaskStatusFailed:
-// 		return "❌"
-// 	case types.TaskStatusCancelled:
-// 		return "🚫"
-// 	case types.TaskStatusPaused:
-// 		return "⏸️"
-// 	default:
-// 		return "❓"
-// 	}
-// }
+// Helper functions
+func getStatusIcon(status types.TaskStatus) string {
+	switch status {
+	case types.TaskStatusQueued:
+		return "⏳"
+	case types.TaskStatusInProgress:
+		return "🔄"
+	case types.TaskStatusCompleted:
+		return "✅"
+	case types.TaskStatusFailed:
+		return "❌"
+	case types.TaskStatusCancelled:
+		return "🚫"
+	case types.TaskStatusPaused:
+		return "⏸️"
+	default:
+		return "❓"
+	}
+}
 
-// func truncateString(s string, maxLength int) string {
-// 	if len(s) <= maxLength {
-// 		return s
-// 	}
-// 	return s[:maxLength-3] + "..."
-// }
+func truncateString(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
+	}
+	return s[:maxLength-3] + "..."
+}

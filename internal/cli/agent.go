@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/spf13/cobra"
 )
 
@@ -32,89 +29,60 @@ func addEnvCommands(app *App) *cobra.Command {
 	setCmd := &cobra.Command{
 		Use:   "set <key> <value> OR <key>=<value>",
 		Short: "Set an agent environment variable",
-		Long:  "Set an agent environment variable",
+		Long:  "Set an agent environment variable. Defaults to project scope unless --scope global is specified.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf("invalid number of arguments - you must specify the key and value either by 'set key value' or 'set key=value'")
-			} else if len(args) == 1 {
-				// Split the argument by "=" if possible
-				keyValue := args[0]
-				if idx := strings.Index(keyValue, "="); idx != -1 {
-					key := keyValue[:idx]
-					value := keyValue[idx+1:]
-					return app.configManager.SetEnvVar(key, value)
-				} else {
-					return fmt.Errorf("please use 'set key=value' format or provide both key and value as separate arguments")
-				}
-			} else if len(args) == 2 {
-				key := args[0]
-				value := args[1]
-				return app.configManager.SetEnvVar(key, value)
-			} else {
-				return fmt.Errorf("invalid number of arguments. Use 'set key value' or 'set key=value'")
-			}
+			return app.setEnvVar(cmd, args)
 		},
 	}
+	setCmd.Flags().String("scope", "project", "Scope for environment variable (global, project)")
 	envCmd.AddCommand(setCmd)
 
 	// Get command
 	getCmd := &cobra.Command{
 		Use:   "get <key>",
 		Short: "Get an agent environment variable",
-		Long:  "Get an agent environment variable",
+		Long:  "Get an agent environment variable. Use --scope to filter by scope, or omit to check both scopes and show which one was used.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key := args[0]
-			value, err := app.configManager.GetEnvVar(key)
-			if err != nil {
-				return err
-			}
-			cmd.Printf("%s=%s\n", key, value)
-			return nil
+			return app.getEnvVar(cmd, args[0])
 		},
 	}
+	getCmd.Flags().String("scope", "", "Scope to check (project, global). If not specified, checks both and shows which scope was used.")
 	envCmd.AddCommand(getCmd)
 
 	// List command
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all agent environment variables",
-		Long:  "List all agent environment variables",
+		Long:  "List all agent environment variables. Use --scope to filter by scope.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 0 {
-				return fmt.Errorf("invalid number of arguments. Use 'list' or 'list <key>'")
-			}
-			env, err := app.configManager.GetEnvVars()
-			if err != nil {
-				return err
-			}
-			for key, value := range env {
-				cmd.Printf("%s=%s\n", key, value)
-			}
-			return nil
+			return app.listEnvVars(cmd)
 		},
 	}
+	listCmd.Flags().String("scope", "all", "Scope to list (project, global, all)")
 	envCmd.AddCommand(listCmd)
 
 	// Delete command
 	deleteCmd := &cobra.Command{
 		Use:   "delete <key>",
 		Short: "Delete an agent environment variable",
-		Long:  "Delete an agent environment variable",
+		Long:  "Delete an agent environment variable. Use --scope to specify scope (defaults to project).",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return app.configManager.DeleteEnvVar(args[0])
+			return app.deleteEnvVar(cmd, args[0])
 		},
 	}
+	deleteCmd.Flags().String("scope", "project", "Scope to delete from (project, global, both)")
 	envCmd.AddCommand(deleteCmd)
 
 	// Import command
 	importCmd := &cobra.Command{
 		Use:   "import <file>",
 		Short: "Import agent environment variables from a file",
-		Long:  "Import agent environment variables from a file. Follows typical .env file format - key=value per line.",
+		Long:  "Import agent environment variables from a file. Follows typical .env file format - key=value per line. Defaults to project scope unless --scope global is specified.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return app.loadEnvFile(cmd, args[0])
 		},
 	}
+	importCmd.Flags().String("scope", "project", "Scope for imported environment variables (global, project)")
 	envCmd.AddCommand(importCmd)
 
 	return envCmd

@@ -46,6 +46,33 @@ func (app *App) showProviderHelp(cmd *cobra.Command, providerName string) error 
 	return nil
 }
 
+func (app *App) testProvider(cmd *cobra.Command, providerName string) error {
+	// Validate provider
+	availableProviders := providers.GetAvailableProviders()
+	validProvider := false
+	for _, provider := range availableProviders {
+		if provider == providerName {
+			validProvider = true
+			break
+		}
+	}
+	if !validProvider {
+		return fmt.Errorf("unknown provider: %s. Available providers: %s", providerName, strings.Join(availableProviders, ", "))
+	}
+
+	// Route to provider-specific test function
+	switch providerName {
+	case "github":
+		return app.testGitHub(cmd)
+	case "gitlab":
+		return app.testGitLab(cmd)
+	case "bitbucket":
+		return app.testBitbucket(cmd)
+	default:
+		return fmt.Errorf("test not implemented for provider: %s", providerName)
+	}
+}
+
 func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
 	// Validate provider
 	availableProviders := providers.GetAvailableProviders()
@@ -60,40 +87,16 @@ func (app *App) loginProvider(cmd *cobra.Command, providerName string) error {
 		return fmt.Errorf("unknown provider: %s. Available providers: %s", providerName, strings.Join(availableProviders, ", "))
 	}
 
-	// Check if any authentication flags are provided
-	token, _ := cmd.Flags().GetString("token")
-	username, _ := cmd.Flags().GetString("username")
-	password, _ := cmd.Flags().GetString("password")
-
-	// If no authentication flags are provided, show help
-	if token == "" && username == "" && password == "" {
-		return app.showProviderHelp(cmd, providerName)
-	}
-
-	// Get authentication method and scope
-	method, _ := cmd.Flags().GetString("method")
-	targetScope, _ := cmd.Flags().GetString("scope")
-
-	var scope auth.AuthScope
-	if targetScope == "" {
-		scope = auth.AuthScopeProject
-	} else if targetScope != "global" && targetScope != "project" {
-		return fmt.Errorf("invalid scope: %s. Valid scopes: global, project", targetScope)
-	} else {
-		scope = auth.AuthScope(targetScope)
-	}
-
-	cmd.Printf("🔐 Logging into %s provider...\n", providerName)
-	cmd.Printf("Method: %s\n", method)
-	cmd.Printf("Scope: %s\n", scope)
-
-	switch method {
-	case "token":
-		return app.loginWithToken(cmd, providerName, scope)
-	case "basic":
-		return app.loginWithBasic(cmd, providerName, scope)
+	// Route to provider-specific login function
+	switch providerName {
+	case "github":
+		return app.loginGitHub(cmd)
+	case "gitlab":
+		return app.loginGitLab(cmd)
+	case "bitbucket":
+		return app.loginBitbucket(cmd)
 	default:
-		return fmt.Errorf("unsupported authentication method: %s. Supported methods: token, basic", method)
+		return fmt.Errorf("login not implemented for provider: %s", providerName)
 	}
 }
 

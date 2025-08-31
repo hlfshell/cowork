@@ -21,8 +21,8 @@ func (app *App) initializeProject(cmd *cobra.Command) error {
 	cmd.Printf("   Current branch: %s\n", repoInfo.CurrentBranch)
 
 	// Check if already initialized
-	cwDir := filepath.Join(repoInfo.Path, ".cw")
-	if _, err := os.Stat(cwDir); err == nil {
+	coworkDir := filepath.Join(repoInfo.Path, ".cowork")
+	if _, err := os.Stat(coworkDir); err == nil {
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
 			return fmt.Errorf("cowork is already initialized in this repository. Use --force to reinitialize")
@@ -30,21 +30,21 @@ func (app *App) initializeProject(cmd *cobra.Command) error {
 		cmd.Printf("ℹ️  Reinitializing existing cowork setup\n")
 	}
 
-	// Create .cw directory
-	if err := os.MkdirAll(cwDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .cw directory: %w", err)
+	// Create .cowork directory
+	if err := os.MkdirAll(coworkDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .cowork directory: %w", err)
 	}
-	cmd.Printf("✅ Created .cw directory: %s\n", cwDir)
+	cmd.Printf("✅ Created .cowork directory: %s\n", coworkDir)
 
 	// Create workspaces directory
-	workspacesDir := filepath.Join(cwDir, "workspaces")
+	workspacesDir := filepath.Join(coworkDir, "workspaces")
 	if err := os.MkdirAll(workspacesDir, 0755); err != nil {
 		return fmt.Errorf("failed to create workspaces directory: %w", err)
 	}
 	cmd.Printf("✅ Created workspaces directory: %s\n", workspacesDir)
 
 	// Check if project config exists, create if not
-	projectConfigPath := filepath.Join(repoInfo.Path, ".cwconfig")
+	projectConfigPath := filepath.Join(repoInfo.Path, ".cowork", "config.yaml")
 	if _, err := os.Stat(projectConfigPath); os.IsNotExist(err) {
 		// Create default project configuration
 		defaultConfig := app.configManager.GetDefaultConfig()
@@ -57,8 +57,8 @@ func (app *App) initializeProject(cmd *cobra.Command) error {
 	}
 
 	cmd.Printf("\n🎉 Project initialized successfully!\n")
-	cmd.Printf("   You can now use: cw task start <task-name>\n")
-	cmd.Printf("   Configuration: cw config show\n")
+	cmd.Printf("   You can now use: cowork task start <task-name>\n")
+	cmd.Printf("   Configuration: cowork config show\n")
 
 	return nil
 }
