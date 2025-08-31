@@ -96,7 +96,7 @@ type GitProvider interface {
 // GitOperationsInterface defines the interface for local Git operations
 type GitOperationsInterface interface {
 	// CloneRepository clones a repository using the specified isolation level
-	CloneRepository(req *types.CreateWorkspaceRequest, workspacePath string) error
+	CloneRepository(req *types.CreateWorkspaceRequest, workspacePath string, authInfo *types.GitAuthInfo) error
 
 	// GetRepositoryInfo retrieves information about a Git repository
 	GetRepositoryInfo(repoPath string) (*RepositoryInfo, error)

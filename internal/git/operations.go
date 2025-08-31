@@ -37,7 +37,7 @@ func NewGitOperations(operationTimeoutSeconds int) *GitOperations {
 }
 
 // CloneRepository clones a repository using full clone
-func (g *GitOperations) CloneRepository(req *types.CreateWorkspaceRequest, workspacePath string) error {
+func (g *GitOperations) CloneRepository(req *types.CreateWorkspaceRequest, workspacePath string, authInfo *types.GitAuthInfo) error {
 	// Validate the request
 	if err := req.Validate(); err != nil {
 		return fmt.Errorf("invalid create workspace request: %w", err)
@@ -54,11 +54,11 @@ func (g *GitOperations) CloneRepository(req *types.CreateWorkspaceRequest, works
 	}
 
 	// Perform the full clone
-	return g.performFullClone(req, workspacePath)
+	return g.performFullClone(req, workspacePath, authInfo)
 }
 
 // performFullClone creates a complete independent clone of the repository
-func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, workspacePath string) error {
+func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, workspacePath string, authInfo *types.GitAuthInfo) error {
 	// Check if source is a local path or remote URL
 	if isLocalPath(req.SourceRepo) {
 		return g.cloneFromLocalPath(req.SourceRepo, workspacePath, req)
@@ -67,9 +67,8 @@ func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, work
 	// Build the clone command for remote repository
 	cloneArgs := []string{"clone", req.SourceRepo, workspacePath}
 
-	// Execute the clone command
-	cloneCmd := exec.Command("git", cloneArgs...)
-	cloneCmd.Dir = filepath.Dir(workspacePath)
+	// Execute the clone command with authentication
+	cloneCmd := g.getAuthenticatedCommand(filepath.Dir(workspacePath), authInfo, cloneArgs...)
 
 	output, err := cloneCmd.CombinedOutput()
 	if err != nil {
@@ -78,7 +77,7 @@ func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, work
 
 	// Checkout the specified branch if it's not the default
 	if req.BaseBranch != "main" && req.BaseBranch != "master" {
-		if err := g.checkoutBranch(workspacePath, req.BaseBranch); err != nil {
+		if err := g.checkoutBranch(workspacePath, req.BaseBranch, authInfo); err != nil {
 			return fmt.Errorf("failed to checkout branch %s: %w", req.BaseBranch, err)
 		}
 	}
@@ -92,7 +91,7 @@ func (g *GitOperations) performFullClone(req *types.CreateWorkspaceRequest, work
 		branchName = g.generateBranchName(req.TaskName, req.TicketID)
 	}
 
-	if err := g.createAndCheckoutBranch(workspacePath, branchName); err != nil {
+	if err := g.createAndCheckoutBranch(workspacePath, branchName, authInfo); err != nil {
 		return fmt.Errorf("failed to create task branch: %w", err)
 	}
 
@@ -125,14 +124,14 @@ func (g *GitOperations) cloneFromLocalPath(sourcePath, workspacePath string, req
 
 	// Checkout the specified branch if it's not the default
 	if req.BaseBranch != "main" && req.BaseBranch != "master" {
-		if err := g.checkoutBranch(workspacePath, req.BaseBranch); err != nil {
+		if err := g.checkoutBranch(workspacePath, req.BaseBranch, nil); err != nil {
 			return fmt.Errorf("failed to checkout branch %s: %w", req.BaseBranch, err)
 		}
 	}
 
 	// Create a new branch for the task
 	branchName := g.generateBranchName(req.TaskName, req.TicketID)
-	if err := g.createAndCheckoutBranch(workspacePath, branchName); err != nil {
+	if err := g.createAndCheckoutBranch(workspacePath, branchName, nil); err != nil {
 		return fmt.Errorf("failed to create task branch: %w", err)
 	}
 
@@ -140,18 +139,16 @@ func (g *GitOperations) cloneFromLocalPath(sourcePath, workspacePath string, req
 }
 
 // checkoutBranch checks out a specific branch in the repository
-func (g *GitOperations) checkoutBranch(repoPath, branchName string) error {
+func (g *GitOperations) checkoutBranch(repoPath, branchName string, authInfo *types.GitAuthInfo) error {
 	// First, try to checkout the branch directly
-	checkoutCmd := exec.Command("git", "checkout", branchName)
-	checkoutCmd.Dir = repoPath
+	checkoutCmd := g.getAuthenticatedCommand(repoPath, authInfo, "checkout", branchName)
 
 	output, err := checkoutCmd.CombinedOutput()
 	if err != nil {
 		// If the branch doesn't exist locally, try to fetch and checkout
 		if strings.Contains(string(output), "did not match any file") {
 			// Fetch the branch from remote
-			fetchCmd := exec.Command("git", "fetch", "origin", branchName)
-			fetchCmd.Dir = repoPath
+			fetchCmd := g.getAuthenticatedCommand(repoPath, authInfo, "fetch", "origin", branchName)
 
 			fetchOutput, fetchErr := fetchCmd.CombinedOutput()
 			if fetchErr != nil {
@@ -159,8 +156,7 @@ func (g *GitOperations) checkoutBranch(repoPath, branchName string) error {
 			}
 
 			// Try checkout again
-			checkoutCmd = exec.Command("git", "checkout", branchName)
-			checkoutCmd.Dir = repoPath
+			checkoutCmd = g.getAuthenticatedCommand(repoPath, authInfo, "checkout", branchName)
 
 			output, err = checkoutCmd.CombinedOutput()
 			if err != nil {
@@ -175,10 +171,9 @@ func (g *GitOperations) checkoutBranch(repoPath, branchName string) error {
 }
 
 // createAndCheckoutBranch creates a new branch and checks it out
-func (g *GitOperations) createAndCheckoutBranch(repoPath, branchName string) error {
+func (g *GitOperations) createAndCheckoutBranch(repoPath, branchName string, authInfo *types.GitAuthInfo) error {
 	// Create and checkout the new branch
-	checkoutCmd := exec.Command("git", "checkout", "-b", branchName)
-	checkoutCmd.Dir = repoPath
+	checkoutCmd := g.getAuthenticatedCommand(repoPath, authInfo, "checkout", "-b", branchName)
 
 	output, err := checkoutCmd.CombinedOutput()
 	if err != nil {
@@ -186,6 +181,122 @@ func (g *GitOperations) createAndCheckoutBranch(repoPath, branchName string) err
 	}
 
 	return nil
+}
+
+// PushBranch pushes a branch to the remote repository
+func (g *GitOperations) PushBranch(repoPath, branchName string, authInfo *types.GitAuthInfo) error {
+	// Push branch to origin
+	pushCmd := g.getAuthenticatedCommand(repoPath, authInfo, "push", "-u", "origin", branchName)
+	pushCmd.Stdout = os.Stdout
+	pushCmd.Stderr = os.Stderr
+
+	if err := pushCmd.Run(); err != nil {
+		return fmt.Errorf("failed to push branch %s: %w", branchName, err)
+	}
+
+	return nil
+}
+
+// PullBranch pulls the latest changes for a branch
+func (g *GitOperations) PullBranch(repoPath, branchName string, authInfo *types.GitAuthInfo) error {
+	// Pull latest changes
+	pullCmd := g.getAuthenticatedCommand(repoPath, authInfo, "pull", "origin", branchName)
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("failed to pull branch %s: %w", branchName, err)
+	}
+
+	return nil
+}
+
+// FetchOrigin fetches the latest changes from origin
+func (g *GitOperations) FetchOrigin(repoPath string, authInfo *types.GitAuthInfo) error {
+	// Fetch latest changes
+	fetchCmd := g.getAuthenticatedCommand(repoPath, authInfo, "fetch", "origin")
+	fetchCmd.Stdout = os.Stdout
+	fetchCmd.Stderr = os.Stderr
+
+	if err := fetchCmd.Run(); err != nil {
+		return fmt.Errorf("failed to fetch origin: %w", err)
+	}
+
+	return nil
+}
+
+// getAuthenticatedCommand creates a git command with authentication context
+func (g *GitOperations) getAuthenticatedCommand(workspacePath string, authInfo *types.GitAuthInfo, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = workspacePath
+
+	// Configure authentication if provided
+	if authInfo != nil {
+		g.configureAuth(workspacePath, authInfo)
+	}
+
+	return cmd
+}
+
+// configureAuth configures git authentication for the workspace
+func (g *GitOperations) configureAuth(workspacePath string, authInfo *types.GitAuthInfo) {
+	switch authInfo.Method {
+	case types.GitAuthMethodSSH:
+		g.configureSSHAuth(workspacePath, authInfo)
+	case types.GitAuthMethodHTTPS:
+		g.configureHTTPSAuth(workspacePath, authInfo)
+	}
+}
+
+// configureSSHAuth configures SSH authentication
+func (g *GitOperations) configureSSHAuth(workspacePath string, authInfo *types.GitAuthInfo) {
+	if authInfo.SSHKeyPath == "" {
+		return
+	}
+
+	// Expand ~ to home directory
+	sshKeyPath := authInfo.SSHKeyPath
+	if strings.HasPrefix(sshKeyPath, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		sshKeyPath = filepath.Join(homeDir, sshKeyPath[1:])
+	}
+
+	// Verify SSH key exists
+	if _, err := os.Stat(sshKeyPath); os.IsNotExist(err) {
+		return
+	}
+
+	// Configure git to use the SSH key
+	cmd := exec.Command("git", "config", "core.sshCommand", fmt.Sprintf("ssh -i %s", sshKeyPath))
+	cmd.Dir = workspacePath
+	cmd.Run() // Ignore errors
+}
+
+// configureHTTPSAuth configures HTTPS authentication
+func (g *GitOperations) configureHTTPSAuth(workspacePath string, authInfo *types.GitAuthInfo) {
+	if authInfo.Username == "" || (authInfo.Password == "" && authInfo.Token == "") {
+		return
+	}
+
+	// Configure git credential helper
+	cmd := exec.Command("git", "config", "credential.helper", "store")
+	cmd.Dir = workspacePath
+	cmd.Run() // Ignore errors
+
+	// Create credential file
+	credentialFile := filepath.Join(workspacePath, ".git", "credentials")
+
+	var credentialContent string
+	if authInfo.Token != "" {
+		credentialContent = fmt.Sprintf("https://%s@", authInfo.Token)
+	} else {
+		credentialContent = fmt.Sprintf("https://%s:%s@", authInfo.Username, authInfo.Password)
+	}
+
+	os.WriteFile(credentialFile, []byte(credentialContent), 0600) // Ignore errors
 }
 
 // generateBranchName creates a branch name from the task name and ticket ID

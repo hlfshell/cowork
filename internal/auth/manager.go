@@ -10,12 +10,14 @@ import (
 	"github.com/hlfshell/cowork/internal/config"
 	"github.com/hlfshell/cowork/internal/git"
 	gitprovider "github.com/hlfshell/cowork/internal/git/providers"
+	"github.com/hlfshell/cowork/internal/secure_store"
 )
 
-// Manager handles authentication for all Git providers
+// Manager handles authentication for all Git providers and git operations
 type Manager struct {
-	configManager *config.Manager
-	authStore     *SecureStore
+	configManager   *config.Manager
+	globalAuthStore *secure_store.SecureStore
+	localAuthStore  *secure_store.SecureStore
 }
 
 // AuthConfig represents authentication configuration for a provider
@@ -48,15 +50,27 @@ const (
 
 // NewManager creates a new authentication manager
 func NewManager(configManager *config.Manager) (*Manager, error) {
-	authStore, err := NewSecureStore()
+	globalAuthStore, err := secure_store.NewSecureStore("auth", configManager.GlobalConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secure store: %w", err)
+	}
+	localAuthStore, err := secure_store.NewSecureStore("auth", configManager.ProjectConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secure store: %w", err)
 	}
 
 	return &Manager{
-		configManager: configManager,
-		authStore:     authStore,
+		configManager:   configManager,
+		globalAuthStore: globalAuthStore,
+		localAuthStore:  localAuthStore,
 	}, nil
+}
+
+func (m *Manager) getAuthStore(scope AuthScope) *secure_store.SecureStore {
+	if scope == AuthScopeGlobal {
+		return m.globalAuthStore
+	}
+	return m.localAuthStore
 }
 
 // AuthenticateProvider authenticates with a specific provider using the specified method
@@ -107,13 +121,30 @@ func (m *Manager) SetBasicAuth(providerType git.ProviderType, username, password
 // GetAuthConfig retrieves authentication configuration for the specified provider
 func (m *Manager) GetAuthConfig(providerType git.ProviderType, scope AuthScope) (*AuthConfig, error) {
 	key := m.getAuthKey(providerType, scope)
-	return m.authStore.Get(key)
+	var authConfig AuthConfig
+	var err error
+	switch scope {
+	case AuthScopeGlobal:
+		err = m.globalAuthStore.Get(key, &authConfig)
+	case AuthScopeProject:
+		err = m.localAuthStore.Get(key, &authConfig)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &authConfig, nil
 }
 
 // RemoveAuth removes authentication configuration for the specified provider
 func (m *Manager) RemoveAuth(providerType git.ProviderType, scope AuthScope) error {
 	key := m.getAuthKey(providerType, scope)
-	return m.authStore.Delete(key)
+	switch scope {
+	case AuthScopeGlobal:
+		return m.globalAuthStore.Delete(key)
+	case AuthScopeProject:
+		return m.localAuthStore.Delete(key)
+	}
+	return nil
 }
 
 // ListAuthConfigs lists all authentication configurations
@@ -166,6 +197,23 @@ func (m *Manager) createProvider(providerType git.ProviderType, authConfig *Auth
 	}
 }
 
+// saveGitAuthConfig saves git authentication configuration
+func (m *Manager) saveGitAuthConfig(gitAuthConfig *GitAuthConfig, scope AuthScope) error {
+	key := m.getGitAuthKey(scope)
+	switch scope {
+	case AuthScopeGlobal:
+		return m.globalAuthStore.Set(key, gitAuthConfig)
+	case AuthScopeProject:
+		return m.localAuthStore.Set(key, gitAuthConfig)
+	}
+	return nil
+}
+
+// getGitAuthKey generates a key for storing git authentication configuration
+func (m *Manager) getGitAuthKey(scope AuthScope) string {
+	return fmt.Sprintf("git_%s", string(scope))
+}
+
 // generateState generates a random state string for CSRF protection
 func (m *Manager) generateState() (string, error) {
 	bytes := make([]byte, 32)
@@ -178,7 +226,13 @@ func (m *Manager) generateState() (string, error) {
 // saveAuthConfig saves authentication configuration
 func (m *Manager) saveAuthConfig(authConfig *AuthConfig, scope AuthScope) error {
 	key := m.getAuthKey(authConfig.ProviderType, scope)
-	return m.authStore.Set(key, authConfig)
+	switch scope {
+	case AuthScopeGlobal:
+		return m.globalAuthStore.Set(key, authConfig)
+	case AuthScopeProject:
+		return m.localAuthStore.Set(key, authConfig)
+	}
+	return nil
 }
 
 // getAuthKey generates a key for storing authentication configuration

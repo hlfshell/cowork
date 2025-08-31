@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/hlfshell/cowork/internal/container"
+	"github.com/hlfshell/cowork/internal/types"
 )
 
 // AiderAgent implements the Agent interface for the Aider AI coding agent
@@ -22,17 +25,31 @@ type AiderAgent struct {
 	// Mutex for thread-safe operations
 	mu sync.RWMutex
 
-	// Process for the running agent
-	process *exec.Cmd
-
-	// Context for cancellation
-	cancel context.CancelFunc
+	// Container manager for running aider in containers
+	containerManager container.ContainerManager
 
 	// Agent information
 	info map[string]interface{}
 
 	// Agent history
 	history []HistoryEntry
+
+	// Last execution result
+	lastResult *AgentResult
+}
+
+// AgentResult represents the result of an agent execution
+type AgentResult struct {
+	Success       bool              `json:"success"`
+	Summary       string            `json:"summary"`
+	Output        string            `json:"output"`
+	ModifiedFiles []string          `json:"modified_files"`
+	CreatedFiles  []string          `json:"created_files"`
+	DeletedFiles  []string          `json:"deleted_files"`
+	Error         string            `json:"error,omitempty"`
+	Metadata      map[string]string `json:"metadata"`
+	CompletedAt   time.Time         `json:"completed_at"`
+	Duration      time.Duration     `json:"duration"`
 }
 
 // NewAiderAgent creates a new Aider agent instance
@@ -44,6 +61,7 @@ func NewAiderAgent() *AiderAgent {
 			"version":     "latest",
 			"description": "Open-source AI pair programming tool",
 			"website":     "https://github.com/Aider-AI/aider",
+			"container":   "paulgauthier/aider",
 		},
 		history: make([]HistoryEntry, 0),
 	}
@@ -69,8 +87,21 @@ func (a *AiderAgent) Initialize(ctx context.Context, config *AgentConfig) error 
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Initialize container manager
+	containerManager, err := container.DetectEngine()
+	if err != nil {
+		return fmt.Errorf("failed to detect container engine: %w", err)
+	}
+
 	a.config = config
+	a.containerManager = containerManager
 	a.status = AgentStatusIdle
+
+	a.addHistoryEntry("initialized", "Aider agent initialized successfully", map[string]interface{}{
+		"container_engine": string(containerManager.GetEngine()),
+		"working_dir":      config.WorkingDir,
+		"timeout":          config.Timeout.String(),
+	})
 
 	return nil
 }
@@ -102,16 +133,6 @@ func (a *AiderAgent) Execute(ctx context.Context, instruction *AgentInstruction)
 		return fmt.Errorf("agent is not ready (current status: %s)", a.status)
 	}
 
-	// Create instruction file
-	instructionFile, err := a.createInstructionFile(instruction)
-	if err != nil {
-		a.addHistoryEntry("file_creation_error", "Failed to create instruction file", map[string]interface{}{
-			"error": err.Error(),
-		})
-		return fmt.Errorf("failed to create instruction file: %w", err)
-	}
-	defer os.Remove(instructionFile)
-
 	// Set status to working
 	a.status = AgentStatusWorking
 	a.addHistoryEntry("status_change", "Agent status changed to working", map[string]interface{}{
@@ -122,8 +143,8 @@ func (a *AiderAgent) Execute(ctx context.Context, instruction *AgentInstruction)
 	execCtx, cancel := context.WithTimeout(ctx, a.config.Timeout)
 	defer cancel()
 
-	// Execute Aider
-	err = a.executeAider(execCtx, instructionFile)
+	// Execute Aider in container
+	result, err := a.executeAiderInContainer(execCtx, instruction)
 	if err != nil {
 		a.status = AgentStatusFailed
 		a.addHistoryEntry("execution_error", "Aider execution failed", map[string]interface{}{
@@ -132,11 +153,25 @@ func (a *AiderAgent) Execute(ctx context.Context, instruction *AgentInstruction)
 		return fmt.Errorf("failed to execute Aider: %w", err)
 	}
 
-	// Set status to completed
-	a.status = AgentStatusCompleted
-	a.addHistoryEntry("execution_completed", "Aider execution completed successfully", map[string]interface{}{
-		"task_id": instruction.TaskID,
-	})
+	// Store the result
+	a.lastResult = result
+
+	// Set status based on result
+	if result.Success {
+		a.status = AgentStatusCompleted
+		a.addHistoryEntry("execution_completed", "Aider execution completed successfully", map[string]interface{}{
+			"task_id":  instruction.TaskID,
+			"summary":  result.Summary,
+			"duration": result.Duration.String(),
+		})
+	} else {
+		a.status = AgentStatusFailed
+		a.addHistoryEntry("execution_failed", "Aider execution failed", map[string]interface{}{
+			"task_id": instruction.TaskID,
+			"error":   result.Error,
+		})
+		return fmt.Errorf("aider execution failed: %s", result.Error)
+	}
 
 	return nil
 }
@@ -157,17 +192,8 @@ func (a *AiderAgent) Stop(ctx context.Context) error {
 		return fmt.Errorf("agent is not currently working")
 	}
 
-	if a.cancel != nil {
-		a.cancel()
-	}
-
-	if a.process != nil && a.process.Process != nil {
-		if err := a.process.Process.Kill(); err != nil {
-			return fmt.Errorf("failed to kill process: %w", err)
-		}
-	}
-
 	a.status = AgentStatusStopped
+	a.addHistoryEntry("stopped", "Agent was stopped by user", nil)
 	return nil
 }
 
@@ -175,16 +201,6 @@ func (a *AiderAgent) Stop(ctx context.Context) error {
 func (a *AiderAgent) Cleanup(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	// Stop the agent if it's running
-	if a.status == AgentStatusWorking {
-		if a.cancel != nil {
-			a.cancel()
-		}
-		if a.process != nil && a.process.Process != nil {
-			a.process.Process.Kill()
-		}
-	}
 
 	a.status = AgentStatusIdle
 	return nil
@@ -210,6 +226,12 @@ func (a *AiderAgent) GetInfo() map[string]interface{} {
 		info["working_dir"] = "not configured"
 	}
 
+	// Add container engine info
+	if a.containerManager != nil {
+		info["container_engine"] = string(a.containerManager.GetEngine())
+		info["container_available"] = a.containerManager.IsAvailable()
+	}
+
 	return info
 }
 
@@ -225,9 +247,74 @@ func (a *AiderAgent) GetVersion() string {
 
 // GenerateInstructions generates instructions from a task
 func (a *AiderAgent) GenerateInstructions(task interface{}) (string, error) {
-	// For now, return a simple instruction based on task
-	// This can be enhanced to generate more sophisticated instructions
-	return "Please implement the requested feature based on the task requirements.", nil
+	// Type assertion to get task details
+	taskReq, ok := task.(*types.CreateTaskRequest)
+	if !ok {
+		return "", fmt.Errorf("invalid task type, expected *types.CreateTaskRequest")
+	}
+
+	// Generate comprehensive instructions based on the task
+	instructions := fmt.Sprintf(`# Task: %s
+
+## Description
+%s
+
+## Requirements
+- Implement the requested feature based on the task description
+- Follow best practices for code quality and maintainability
+- Ensure proper error handling and edge case coverage
+- Write clear, readable code with appropriate comments
+
+## Git Workflow
+When you are done with the implementation:
+
+1. **Group files into commits based on functionality**:
+   - Create separate commits for different logical components
+   - Group related changes together (e.g., all authentication changes in one commit)
+   - Keep commits focused and atomic
+
+2. **Write meaningful commit messages**:
+   - Use conventional commit format: type(scope): description
+   - Examples:
+     - feat(auth): implement OAuth token refresh
+     - fix(api): resolve race condition in user creation
+     - docs(readme): update installation instructions
+     - test(auth): add unit tests for token validation
+
+3. **Push the branch remotely**:
+   - After creating all commits, push the current branch to the remote repository
+   - Use: git push origin HEAD
+
+## Code Quality Guidelines
+- Write tests for new functionality
+- Follow existing code style and patterns
+- Add appropriate error handling
+- Include documentation where needed
+- Run any existing tests to ensure nothing is broken
+
+## Completion Criteria
+- All requested functionality is implemented
+- Code is properly tested
+- Changes are committed with meaningful messages
+- Branch is pushed to remote repository
+- No obvious bugs or issues remain
+
+Please proceed with the implementation.`, taskReq.Name, taskReq.Description)
+
+	// Add metadata if available
+	if len(taskReq.Metadata) > 0 {
+		instructions += "\n\n## Additional Context\n"
+		for k, v := range taskReq.Metadata {
+			instructions += fmt.Sprintf("- **%s:** %s\n", k, v)
+		}
+	}
+
+	// Add tags if available
+	if len(taskReq.Tags) > 0 {
+		instructions += fmt.Sprintf("\n**Tags:** %s\n", strings.Join(taskReq.Tags, ", "))
+	}
+
+	return instructions, nil
 }
 
 // GetHistory returns the agent's execution history
@@ -241,6 +328,13 @@ func (a *AiderAgent) GetHistory() []HistoryEntry {
 	return history
 }
 
+// GetLastResult returns the result of the last execution
+func (a *AiderAgent) GetLastResult() *AgentResult {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.lastResult
+}
+
 // addHistoryEntry adds an entry to the agent's history
 func (a *AiderAgent) addHistoryEntry(eventType, description string, data map[string]interface{}) {
 	entry := HistoryEntry{
@@ -252,107 +346,173 @@ func (a *AiderAgent) addHistoryEntry(eventType, description string, data map[str
 	a.history = append(a.history, entry)
 }
 
+// executeAiderInContainer runs Aider in a Docker container following the aider.md pattern
+func (a *AiderAgent) executeAiderInContainer(ctx context.Context, instruction *AgentInstruction) (*AgentResult, error) {
+	startTime := time.Now()
+
+	// Create instruction file
+	instructionFile, err := a.createInstructionFile(instruction)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create instruction file: %w", err)
+	}
+	defer os.Remove(instructionFile)
+
+	// Create .env file for API keys
+	envFile, err := a.createEnvFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create .env file: %w", err)
+	}
+	defer os.Remove(envFile)
+
+	// Prepare container run options
+	runOptions := container.RunOptions{
+		Image:      "paulgauthier/aider",
+		Name:       fmt.Sprintf("aider-task-%d", instruction.TaskID),
+		WorkingDir: "/app",
+		Environment: map[string]string{
+			"OPENAI_API_KEY": a.config.Environment["OPENAI_API_KEY"],
+		},
+		Volumes: map[string]string{
+			a.config.WorkingDir: "/app",
+			envFile:             "/app/.env",
+		},
+		User:        fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+		Remove:      true,
+		TTY:         false,
+		Interactive: false,
+		Command: []string{
+			"--model", "gpt-4o",
+			"--message-file", "/app/instructions.md",
+			"--yes-always",
+			"--auto-commits",
+			"--notifications",
+			"--timeout", "900",
+		},
+	}
+
+	// Copy instruction file to workspace
+	workspaceInstructionFile := filepath.Join(a.config.WorkingDir, "instructions.md")
+	if err := copyFile(instructionFile, workspaceInstructionFile); err != nil {
+		return nil, fmt.Errorf("failed to copy instruction file to workspace: %w", err)
+	}
+	defer os.Remove(workspaceInstructionFile)
+
+	// Run the container
+	containerID, err := a.containerManager.Run(ctx, runOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run aider container: %w", err)
+	}
+
+	// Get container logs
+	logs, err := a.containerManager.Logs(ctx, containerID, container.LogOptions{
+		Follow:     false,
+		Timestamps: true,
+		Tail:       0,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container logs: %w", err)
+	}
+
+	// Read logs
+	logsBytes, err := io.ReadAll(logs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read container logs: %w", err)
+	}
+	logs.Close()
+
+	// Check if container completed successfully
+	containerInfo, err := a.containerManager.Inspect(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	duration := time.Since(startTime)
+
+	// Determine success based on container exit code and logs
+	success := containerInfo.Status == "exited" && strings.Contains(string(logsBytes), "success")
+
+	result := &AgentResult{
+		Success:     success,
+		Output:      string(logsBytes),
+		CompletedAt: time.Now(),
+		Duration:    duration,
+		Metadata: map[string]string{
+			"container_id": containerID,
+			"task_id":      fmt.Sprintf("%d", instruction.TaskID),
+		},
+	}
+
+	if success {
+		result.Summary = "Aider successfully completed the task and committed changes"
+		// TODO: Parse modified/created files from git status
+	} else {
+		result.Error = "Aider execution failed or timed out"
+		result.Summary = "Aider failed to complete the task"
+	}
+
+	return result, nil
+}
+
 // createInstructionFile creates a temporary file with the instruction content
 func (a *AiderAgent) createInstructionFile(instruction *AgentInstruction) (string, error) {
-	// Check if config is available
-	if a.config == nil {
-		return "", fmt.Errorf("agent not initialized")
-	}
-
-	// Create a temporary file in the working directory
-	tempFile := filepath.Join(a.config.WorkingDir, fmt.Sprintf("instruction_%d.md", time.Now().Unix()))
-
-	// Prepare the instruction content
-	content := fmt.Sprintf(`# AI Agent Instruction
-
-**Task ID:** %d
-**Created:** %s
-
-## Content
-
-%s
-
-`, instruction.TaskID, instruction.CreatedAt.Format(time.RFC3339), instruction.Content)
-
-	// Add metadata if available
-	if len(instruction.Metadata) > 0 {
-		content += "\n## Metadata\n\n"
-		for k, v := range instruction.Metadata {
-			content += fmt.Sprintf("- **%s:** %s\n", k, v)
-		}
-	}
+	// Create a temporary file
+	tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("aider_instruction_%d_%d.md", instruction.TaskID, time.Now().Unix()))
 
 	// Write the content to the file
-	if err := os.WriteFile(tempFile, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(tempFile, []byte(instruction.Content), 0644); err != nil {
 		return "", fmt.Errorf("failed to write instruction file: %w", err)
 	}
 
 	return tempFile, nil
 }
 
-// executeAider runs the Aider command with the instruction file
-func (a *AiderAgent) executeAider(ctx context.Context, instructionFile string) error {
-	startTime := time.Now()
+// createEnvFile creates a temporary .env file with API keys
+func (a *AiderAgent) createEnvFile() (string, error) {
+	// Create a temporary .env file
+	envFile := filepath.Join(os.TempDir(), fmt.Sprintf("aider_env_%d.env", time.Now().Unix()))
 
-	// Prepare the command
-	cmd := exec.CommandContext(ctx, a.config.Command[0], a.config.Command[1:]...)
-	cmd.Dir = a.config.WorkingDir
+	// Build environment content
+	var envContent strings.Builder
 
-	// Set environment variables
-	if a.config.Environment != nil {
-		for k, v := range a.config.Environment {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	// Add OpenAI API key
+	if apiKey, ok := a.config.Environment["OPENAI_API_KEY"]; ok {
+		envContent.WriteString(fmt.Sprintf("OPENAI_API_KEY=%s\n", apiKey))
+	}
+
+	// Add Anthropic API key if available
+	if apiKey, ok := a.config.Environment["ANTHROPIC_API_KEY"]; ok {
+		envContent.WriteString(fmt.Sprintf("ANTHROPIC_API_KEY=%s\n", apiKey))
+	}
+
+	// Add other API keys
+	for key, value := range a.config.Environment {
+		if strings.HasSuffix(key, "_API_KEY") && key != "OPENAI_API_KEY" && key != "ANTHROPIC_API_KEY" {
+			envContent.WriteString(fmt.Sprintf("%s=%s\n", key, value))
 		}
 	}
 
-	// Add instruction file to arguments
-	cmd.Args = append(cmd.Args, instructionFile)
+	// Write the content to the file
+	if err := os.WriteFile(envFile, []byte(envContent.String()), 0600); err != nil {
+		return "", fmt.Errorf("failed to write .env file: %w", err)
+	}
 
-	// Capture output
-	stdout, err := cmd.StdoutPipe()
+	return envFile, nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
+		return err
 	}
+	defer sourceFile.Close()
 
-	stderr, err := cmd.StderrPipe()
+	destFile, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
+		return err
 	}
+	defer destFile.Close()
 
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Aider: %w", err)
-	}
-
-	// Store the process for potential cancellation
-	a.process = cmd
-
-	// Read output
-	stdoutBytes, err := io.ReadAll(stdout)
-	if err != nil {
-		return fmt.Errorf("failed to read stdout: %w", err)
-	}
-
-	stderrBytes, err := io.ReadAll(stderr)
-	if err != nil {
-		return fmt.Errorf("failed to read stderr: %w", err)
-	}
-
-	// Wait for the command to complete
-	err = cmd.Wait()
-	duration := time.Since(startTime)
-
-	// Add execution details to history
-	a.addHistoryEntry("execution_details", "Aider execution completed", map[string]interface{}{
-		"duration": duration.String(),
-		"stdout":   string(stdoutBytes),
-		"stderr":   string(stderrBytes),
-	})
-
-	// Return error if command failed
-	if err != nil {
-		return fmt.Errorf("aider command failed: %w", err)
-	}
-
-	return nil
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }

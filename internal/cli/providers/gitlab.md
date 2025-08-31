@@ -35,13 +35,16 @@ To set repository permissions:
 ## How to use the login command:
 ```bash
 # Using token method (recommended):
-cw auth provider login gitlab --method token --token YOUR_TOKEN_HERE
+cw config auth provider gitlab --token YOUR_TOKEN_HERE
 
 # Interactive mode (will prompt for token):
-cw auth provider login gitlab --method token
+cw config auth provider gitlab --method token
 
 # For project-specific authentication:
-cw auth provider login gitlab --method token --scope project --token YOUR_TOKEN_HERE
+cw config auth provider gitlab --token YOUR_TOKEN_HERE --scope project
+
+# Using basic authentication:
+cw config auth provider gitlab --method basic --username YOUR_USERNAME --password YOUR_PASSWORD
 ```
 
 ## Useful links:

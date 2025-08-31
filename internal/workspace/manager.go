@@ -98,6 +98,14 @@ func (m *Manager) CreateWorkspace(req *types.CreateWorkspaceRequest) (*types.Wor
 	// Create the workspace path (convert integer ID to string for directory name)
 	workspacePath := filepath.Join(m.baseDir, fmt.Sprintf("%d", workspaceID))
 
+	// Example: Get authentication info from auth manager (you would implement this)
+	// authInfo := m.getGitAuthInfo()
+
+	// For now, use no authentication
+	authInfo := &types.GitAuthInfo{
+		Method: types.GitAuthMethodNone,
+	}
+
 	// Create the workspace object
 	workspace := &types.Workspace{
 		ID:              workspaceID,
@@ -116,8 +124,8 @@ func (m *Manager) CreateWorkspace(req *types.CreateWorkspaceRequest) (*types.Wor
 		ContainerConfig: req.ContainerConfig,
 	}
 
-	// Clone the repository
-	if err := m.gitOps.CloneRepository(req, workspacePath); err != nil {
+	// Clone the repository with authentication
+	if err := m.gitOps.CloneRepository(req, workspacePath, authInfo); err != nil {
 		// Remove the workspace directory on failure
 		os.RemoveAll(workspacePath)
 		return nil, fmt.Errorf("failed to clone repository: %w", err)

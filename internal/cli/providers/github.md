@@ -26,13 +26,16 @@
 ## How to use the login command:
 ```bash
 # Using token method (recommended):
-cw auth provider login github --method token --token YOUR_TOKEN_HERE
+coork config provider github login --token YOUR_TOKEN_HERE
 
 # Interactive mode (will prompt for token):
-cw auth provider login github --method token
+cowork config provider github login --method token
 
 # For project-specific authentication:
-cw auth provider login github --method token --scope project --token YOUR_TOKEN_HERE
+cowork conifg provider github login --token YOUR_TOKEN_HERE --scope project
+
+# Using basic authentication:
+cowork config provider github login --method basic --username YOUR_USERNAME --password YOUR_PASSWORD
 ```
 
 ## Useful links:

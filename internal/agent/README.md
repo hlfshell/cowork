@@ -6,44 +6,62 @@ This package provides a generic interface for AI coding agents that can be run i
 
 The agent system is designed to:
 
-1. **Run AI agents in workspace containers** - Agents operate within isolated workspace environments
+1. **Run AI agents in workspace containers** - Agents operate within isolated workspace environments using Docker/Podman
 2. **Process different types of instructions** - Support for tasks, PR reviews, issues, and user messages
 3. **Provide a unified interface** - Generic interface that can work with different AI agents
 4. **Manage agent lifecycle** - Creation, execution, monitoring, and cleanup of agents
+5. **Generate comprehensive instructions** - Automatically create detailed instructions from task descriptions
+6. **Handle Git workflow** - Automatically commit changes and push to remote repositories
 
 ## Architecture
 
 ### Core Components
 
 - **`Agent`** - Generic interface for AI agents (implements duck typing)
-- **`AiderAgent`** - Implementation for the Aider AI coding agent
+- **`AiderAgent`** - Implementation for the Aider AI coding agent with container-based execution
 - **`HistoryEntry`** - Represents events in the agent's execution history
+- **`AgentResult`** - Contains the result of agent execution including modified files and metadata
 
 ### Key Types
 
 - **`AgentStatus`** - Represents the current state of an agent (idle, working, completed, failed, stopped)
 - **`AgentInstruction`** - Contains the instruction content and metadata
 - **`AgentConfig`** - Configuration for agent execution
+- **`AgentResult`** - Contains execution results, modified files, and metadata
 - **`HistoryEntry`** - Represents a single event in the agent's history
+
+## AiderAgent Features
+
+### Container-Based Execution
+The AiderAgent runs Aider in a Docker container using the official `paulgauthier/aider` image, following the pattern described in the aider.md documentation:
+
+- **Isolated execution** - Each task runs in its own container
+- **Automatic cleanup** - Containers are removed after execution
+- **File mounting** - Workspace is mounted into the container
+- **Environment isolation** - API keys are securely passed via .env files
+
+### Intelligent Instruction Generation
+The agent automatically generates comprehensive instructions from task descriptions:
+
+- **Task context** - Includes task name, description, and metadata
+- **Git workflow** - Instructions for committing changes and pushing to remote
+- **Code quality guidelines** - Best practices for implementation
+- **Completion criteria** - Clear success metrics
+
+### Git Integration
+The generated instructions include specific Git workflow guidance:
+
+1. **Group files into commits based on functionality**
+2. **Write meaningful commit messages** using conventional commit format
+3. **Push the branch remotely** after completion
 
 ## Installation and Setup
 
 ### Prerequisites
 
-1. **Aider Installation** - Install Aider in your workspace container:
-   ```bash
-   # Create and activate a virtual environment
-   python -m venv aider-env
-   source aider-env/bin/activate
-
-   # Install Aider
-   pip install aider-chat
-   ```
-
-2. **OpenAI API Key** - Set your OpenAI API key:
-   ```bash
-   export OPENAI_API_KEY="your-api-key-here"
-   ```
+1. **Container Engine** - Docker or Podman must be installed and available
+2. **Aider Image** - The `paulgauthier/aider` image will be pulled automatically
+3. **OpenAI API Key** - Set your OpenAI API key in the environment
 
 ### Basic Usage
 
@@ -56,196 +74,74 @@ import (
     "time"
     
     "github.com/hlfshell/cowork/internal/agent"
+    "github.com/hlfshell/cowork/internal/types"
 )
 
 func main() {
     // Create an Aider agent
     agent := agent.NewAiderAgent()
-    
+
     // Create a configuration
     config := &agent.AgentConfig{
         AgentType:  "aider",
-        WorkingDir: "/path/to/your/workspace",
+        WorkingDir: "/path/to/workspace",
         Command:    []string{"aider"},
-        Args:       []string{"--yes"},
         Environment: map[string]string{
-            "OPENAI_API_KEY": os.Getenv("OPENAI_API_KEY"),
+            "OPENAI_API_KEY": "your-api-key-here",
         },
         Timeout:    30 * time.Minute,
         MaxRetries: 3,
     }
-    
+
     // Initialize the agent
     ctx := context.Background()
     err := agent.Initialize(ctx, config)
     if err != nil {
         log.Fatalf("Failed to initialize agent: %v", err)
     }
-    
-    // Create an instruction
+
+    // Create a task
+    task := &types.CreateTaskRequest{
+        Name:        "Implement OAuth refresh",
+        Description: "Add OAuth token refresh logic to handle expired tokens automatically",
+        Metadata: map[string]string{
+            "priority":  "high",
+            "component": "auth",
+        },
+        Tags: []string{"authentication", "oauth", "security"},
+    }
+
+    // Generate instructions from the task
+    instructions, err := agent.GenerateInstructions(task)
+    if err != nil {
+        log.Fatalf("Failed to generate instructions: %v", err)
+    }
+
+    // Create an agent instruction
     instruction := &agent.AgentInstruction{
-        Content:   "Add OAuth token refresh logic to handle expired tokens",
+        Content:   instructions,
         TaskID:    123,
         CreatedAt: time.Now(),
-        Metadata: map[string]string{
-            "task_name": "Implement OAuth refresh",
-        },
     }
-    
+
     // Execute the instruction
     err = agent.Execute(ctx, instruction)
     if err != nil {
         log.Fatalf("Failed to execute instruction: %v", err)
     }
-    
-    log.Printf("Execution completed successfully")
-    
-    // Get agent history
-    history := agent.GetHistory()
-    for _, entry := range history {
-        log.Printf("[%s] %s: %s", entry.Timestamp.Format(time.RFC3339), entry.EventType, entry.Description)
+
+    // Get the result
+    result := agent.GetLastResult()
+    if result != nil {
+        if result.Success {
+            log.Printf("✅ Task completed successfully: %s", result.Summary)
+        } else {
+            log.Printf("❌ Task failed: %s", result.Error)
+        }
     }
-}
-```
 
-## Advanced Usage
-
-### Custom Agent Configuration
-
-```go
-// Create a custom agent configuration
-config := &agent.AgentConfig{
-    AgentType:  "aider",
-    WorkingDir: "/path/to/workspace",
-    Command:    []string{"aider"},
-    Args:       []string{"--yes", "--model", "gpt-4"},
-    Environment: map[string]string{
-        "OPENAI_API_KEY": os.Getenv("OPENAI_API_KEY"),
-        "AIDER_VERBOSE":  "true",
-    },
-    Timeout:    45 * time.Minute,
-    MaxRetries: 5,
-    Verbose:    true,
-    AgentSpecific: map[string]interface{}{
-        "auto_commit": true,
-        "model":       "gpt-4",
-        "temperature": 0.1,
-    },
-}
-
-// Create and use the agent
-baseManager := agent.NewManager()
-agent, err := baseManager.CreateAgent("aider", config)
-if err != nil {
-    log.Fatalf("Failed to create agent: %v", err)
-}
-
-// Execute instruction
-instruction := &agent.AgentInstruction{
-    Type:      agent.InstructionTypeTask,
-    Content:   "Implement a REST API endpoint for user profile management",
-    TaskID:    456,
-    CreatedAt: time.Now(),
-    Priority:  1,
-    Metadata: map[string]string{
-        "framework":     "gin",
-        "database":      "postgresql",
-        "auth_method":   "jwt",
-        "test_framework": "testify",
-    },
-}
-
-result, err := agent.Execute(ctx, instruction)
-if err != nil {
-    log.Fatalf("Failed to execute instruction: %v", err)
-}
-
-// Clean up
-if err := agent.Cleanup(ctx); err != nil {
-    log.Printf("Failed to cleanup agent: %v", err)
-}
-```
-
-### Batch Processing
-
-```go
-// Create multiple instructions
-instructions := []*agent.AgentInstruction{
-    manager.CreateInstructionFromTask("Fix authentication bug", "The login endpoint is not validating passwords correctly", 1),
-    manager.CreateInstructionFromPRReview("PR-123", "Please add input validation for the email field"),
-    manager.CreateInstructionFromIssue("ISSUE-456", "Add unit tests", "The codebase lacks comprehensive unit test coverage"),
-    manager.CreateInstructionFromUserMessage("Please add API documentation using Swagger"),
-}
-
-// Process instructions sequentially
-for i, instruction := range instructions {
-    log.Printf("Processing instruction %d/%d: %s", i+1, len(instructions), instruction.Type)
-    
-    result, err := manager.ExecuteWithAider(ctx, instruction, apiKey)
-    if err != nil {
-        log.Printf("Failed to execute instruction %d: %v", i+1, err)
-        continue
-    }
-    
-    log.Printf("Instruction %d result: %s (Success: %t)", i+1, result.Summary, result.Success)
-}
-```
-
-## Instruction Types
-
-### Task Instructions
-Created from development tasks with task ID and description:
-```go
-instruction := manager.CreateInstructionFromTask(
-    "Implement user authentication",
-    "Add JWT-based authentication with refresh tokens",
-    123,
-)
-```
-
-### PR Review Instructions
-Created from pull request review comments:
-```go
-instruction := manager.CreateInstructionFromPRReview(
-    "PR-456",
-    "Please add error handling and include unit tests for the new feature",
-)
-```
-
-### Issue Instructions
-Created from GitHub/GitLab issues:
-```go
-instruction := manager.CreateInstructionFromIssue(
-    "ISSUE-789",
-    "Add comprehensive logging",
-    "The authentication module needs better logging for debugging",
-)
-```
-
-### User Message Instructions
-Created from direct user messages:
-```go
-instruction := manager.CreateInstructionFromUserMessage(
-    "Please refactor the user authentication code to use dependency injection",
-)
-```
-
-## Agent Results
-
-The `AgentResult` contains comprehensive information about the execution:
-
-```go
-type AgentResult struct {
-    Success       bool              // Whether the agent completed successfully
-    Summary       string            // Summary of what was accomplished
-    Output        string            // Detailed output from the agent
-    ModifiedFiles []string          // List of files that were modified
-    CreatedFiles  []string          // List of files that were created
-    DeletedFiles  []string          // List of files that were deleted
-    Error         string            // Error message if the agent failed
-    Metadata      map[string]string // Metadata about the execution
-    CompletedAt   time.Time         // Timestamp when the result was generated
-    Duration      time.Duration     // Duration of the agent's execution
+    // Cleanup
+    agent.Cleanup(ctx)
 }
 ```
 
@@ -254,10 +150,10 @@ type AgentResult struct {
 ### AgentConfig Fields
 
 - **`AgentType`** - Type of agent (e.g., "aider", "copilot")
-- **`WorkingDir`** - Working directory for the agent
-- **`Command`** - Command to run the agent
+- **`WorkingDir`** - Working directory for the agent (workspace path)
+- **`Command`** - Command to run the agent (usually `["aider"]`)
 - **`Args`** - Arguments for the agent command
-- **`Environment`** - Environment variables for the agent
+- **`Environment`** - Environment variables for the agent (API keys, etc.)
 - **`Timeout`** - Timeout for agent execution (default: 30 minutes)
 - **`MaxRetries`** - Maximum number of retries (default: 3)
 - **`Verbose`** - Whether to enable verbose logging
@@ -268,17 +164,79 @@ type AgentResult struct {
 ```go
 config := &agent.AgentConfig{
     AgentType: "aider",
+    WorkingDir: "/path/to/workspace",
     Command:   []string{"aider"},
-    Args:      []string{"--yes", "--model", "gpt-4"},
     Environment: map[string]string{
         "OPENAI_API_KEY": apiKey,
+        // Optional: Add other API keys
+        "ANTHROPIC_API_KEY": anthropicKey,
+        "GEMINI_API_KEY": geminiKey,
     },
-    AgentSpecific: map[string]interface{}{
-        "auto_commit": true,
-        "model":       "gpt-4",
-        "temperature": 0.1,
-    },
+    Timeout:    30 * time.Minute,
+    MaxRetries: 3,
+    Verbose:    true,
 }
+```
+
+## Container Execution Details
+
+### Container Configuration
+The AiderAgent automatically configures the container with:
+
+- **Image**: `paulgauthier/aider`
+- **Working Directory**: `/app` (mounted from workspace)
+- **User**: Current user ID (for proper file permissions)
+- **Environment**: API keys and other environment variables
+- **Volumes**: Workspace directory and .env file
+- **Auto-removal**: Container is removed after execution
+
+### Aider Command Line
+The agent runs Aider with these flags:
+
+```bash
+aider --model gpt-4o \
+      --message-file /app/instructions.md \
+      --yes-always \
+      --auto-commits \
+      --notifications \
+      --timeout 900
+```
+
+### Generated Instructions Format
+The agent generates comprehensive instructions that include:
+
+```markdown
+# Task: [Task Name]
+
+## Description
+[Task description]
+
+## Requirements
+- Implement the requested feature based on the task description
+- Follow best practices for code quality and maintainability
+- Ensure proper error handling and edge case coverage
+- Write clear, readable code with appropriate comments
+
+## Git Workflow
+When you are done with the implementation:
+
+1. **Group files into commits based on functionality**
+2. **Write meaningful commit messages** using conventional commit format
+3. **Push the branch remotely** using `git push origin HEAD`
+
+## Code Quality Guidelines
+- Write tests for new functionality
+- Follow existing code style and patterns
+- Add appropriate error handling
+- Include documentation where needed
+- Run any existing tests to ensure nothing is broken
+
+## Completion Criteria
+- All requested functionality is implemented
+- Code is properly tested
+- Changes are committed with meaningful messages
+- Branch is pushed to remote repository
+- No obvious bugs or issues remain
 ```
 
 ## Error Handling
@@ -286,7 +244,7 @@ config := &agent.AgentConfig{
 The agent system provides comprehensive error handling:
 
 ```go
-result, err := manager.ExecuteWithAider(ctx, instruction, apiKey)
+result, err := agent.Execute(ctx, instruction)
 if err != nil {
     // Handle execution errors
     log.Printf("Execution failed: %v", err)
@@ -301,6 +259,8 @@ if !result.Success {
 
 // Process successful results
 log.Printf("Success: %s", result.Summary)
+log.Printf("Modified files: %v", result.ModifiedFiles)
+log.Printf("Created files: %v", result.CreatedFiles)
 ```
 
 ## Testing
@@ -312,9 +272,8 @@ The package includes comprehensive tests:
 go test ./internal/agent/... -v
 
 # Run specific test files
-go test ./internal/agent/interface_test.go -v
 go test ./internal/agent/aider_test.go -v
-go test ./internal/agent/manager_test.go -v
+go test ./internal/agent/interface_test.go -v
 ```
 
 ## Integration with Workspace System
@@ -331,17 +290,33 @@ workspace, err := workspaceManager.CreateWorkspace(&types.CreateWorkspaceRequest
     BaseBranch:  "main",
 })
 
-// Create agent manager for the workspace
-agentManager := agent.NewWorkspaceAgentManager(workspace.Path)
+// Create agent for the workspace
+agent := agent.NewAiderAgent()
+config := &agent.AgentConfig{
+    AgentType:  "aider",
+    WorkingDir: workspace.Path,
+    Environment: map[string]string{
+        "OPENAI_API_KEY": apiKey,
+    },
+    Timeout: 30 * time.Minute,
+}
 
-// Execute agent in the workspace
-instruction := agentManager.CreateInstructionFromTask(
-    "Implement OAuth refresh",
-    "Add OAuth token refresh logic",
-    workspace.ID,
-)
+// Initialize and execute
+agent.Initialize(ctx, config)
 
-result, err := agentManager.ExecuteWithAider(ctx, instruction, apiKey)
+task := &types.CreateTaskRequest{
+    Name:        "Implement OAuth refresh",
+    Description: "Add OAuth token refresh logic",
+}
+instructions, _ := agent.GenerateInstructions(task)
+
+instruction := &agent.AgentInstruction{
+    Content:   instructions,
+    TaskID:    workspace.ID,
+    CreatedAt: time.Now(),
+}
+
+err = agent.Execute(ctx, instruction)
 ```
 
 ## Extending the System
@@ -360,7 +335,7 @@ func (a *MyAgent) Initialize(ctx context.Context, config *AgentConfig) error {
     // Initialize your agent
 }
 
-func (a *MyAgent) Execute(ctx context.Context, instruction *AgentInstruction) (*AgentResult, error) {
+func (a *MyAgent) Execute(ctx context.Context, instruction *AgentInstruction) error {
     // Execute the instruction
 }
 
@@ -380,12 +355,20 @@ func (a *MyAgent) GetInfo() map[string]interface{} {
     // Return agent information
 }
 
-func (a *MyAgent) GetType() string {
+func (a *MyAgent) GetName() string {
     return "my-agent"
 }
 
 func (a *MyAgent) GetVersion() string {
     return "1.0.0"
+}
+
+func (a *MyAgent) GenerateInstructions(task interface{}) (string, error) {
+    // Generate instructions from task
+}
+
+func (a *MyAgent) GetHistory() []HistoryEntry {
+    // Return agent history
 }
 ```
 
@@ -450,21 +433,6 @@ config := &agent.AgentConfig{
 agent, err := manager.CreateAgent("my-agent", config)
 ```
 
-### Agent Capabilities
-
-The `AgentCapabilities` struct allows you to define what your agent can do:
-
-- **SupportedInstructionTypes**: What types of instructions your agent can handle
-- **SupportedLanguages**: Programming languages your agent supports
-- **CanCreateFiles**: Whether your agent can create new files
-- **CanModifyFiles**: Whether your agent can modify existing files
-- **CanDeleteFiles**: Whether your agent can delete files
-- **CanRunTests**: Whether your agent can run tests
-- **CanCommitChanges**: Whether your agent can commit changes to version control
-- **RequiresAPIKey**: Whether your agent requires an API key
-- **MaxFileSize**: Maximum file size your agent can handle
-- **MaxTokens**: Maximum tokens your agent can process
-
 ## Best Practices
 
 1. **Always set timeouts** - Prevent agents from running indefinitely
@@ -474,16 +442,21 @@ The `AgentCapabilities` struct allows you to define what your agent can do:
 5. **Monitor agent status** - Check agent status during long-running operations
 6. **Validate instructions** - Ensure instructions are valid before execution
 7. **Use metadata** - Include relevant context in instruction metadata
+8. **Set proper file permissions** - Ensure the agent can read/write workspace files
+9. **Use environment variables** - Pass API keys securely via environment
+10. **Monitor container resources** - Ensure sufficient memory and CPU for agent execution
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Agent not found** - Ensure the agent is installed and in PATH
+1. **Container engine not found** - Ensure Docker or Podman is installed and in PATH
 2. **Permission denied** - Check file permissions in the workspace directory
 3. **Timeout errors** - Increase timeout for complex tasks
 4. **API key issues** - Verify OpenAI API key is set correctly
 5. **Workspace not found** - Ensure workspace path exists and is accessible
+6. **Container pull failed** - Check network connectivity and Docker registry access
+7. **File mounting issues** - Ensure workspace path is absolute and accessible
 
 ### Debug Mode
 
@@ -499,6 +472,17 @@ config := &agent.AgentConfig{
 }
 ```
 
+### Container Logs
+
+Access container logs for debugging:
+
+```go
+result := agent.GetLastResult()
+if result != nil {
+    fmt.Printf("Container output: %s\n", result.Output)
+}
+```
+
 ## Contributing
 
 When contributing to the agent system:
@@ -506,5 +490,6 @@ When contributing to the agent system:
 1. **Follow Go conventions** - Use proper naming and documentation
 2. **Add tests** - Include tests for new functionality
 3. **Update documentation** - Keep README and examples current
-4. **Handle errors** - Provide meaningful error messages
-5. **Validate inputs** - Validate all configuration and instruction inputs
+4. **Handle errors properly** - Provide meaningful error messages
+5. **Use descriptive variable names** - Follow the project's naming conventions
+6. **Add godoc comments** - Document all exported functions and types

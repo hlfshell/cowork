@@ -26,13 +26,16 @@
 ## How to use the login command:
 ```bash
 # Using basic auth method (recommended for Bitbucket):
-cw auth provider login bitbucket --method basic --username YOUR_USERNAME --password YOUR_APP_PASSWORD
+cw config auth provider bitbucket --method basic --username YOUR_USERNAME --password YOUR_APP_PASSWORD
 
 # Interactive mode (will prompt for credentials):
-cw auth provider login bitbucket --method basic
+cw config auth provider bitbucket --method basic
 
 # For project-specific authentication:
-cw auth provider login bitbucket --method basic --scope project --username YOUR_USERNAME --password YOUR_APP_PASSWORD
+cw config auth provider bitbucket --method basic --scope project --username YOUR_USERNAME --password YOUR_APP_PASSWORD
+
+# Using token method (if you have a token):
+cw config auth provider bitbucket --token YOUR_TOKEN_HERE
 ```
 
 ## Useful links:
