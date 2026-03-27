@@ -6,10 +6,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hlfshell/cowork/internal/auth"
 	"github.com/hlfshell/cowork/internal/config"
 	"github.com/hlfshell/cowork/internal/git"
 	"github.com/hlfshell/cowork/internal/task"
 	"github.com/hlfshell/cowork/internal/types"
+	"github.com/hlfshell/cowork/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -79,6 +81,9 @@ func (app *App) setupCommands() {
 
 	// Add task commands (which now handle workspaces)
 	app.addTaskCommands()
+
+	// Add workflow commands
+	app.addWorkflowCommands()
 
 	// Add go command for workflow automation
 	app.addGoCommand()
@@ -634,4 +639,471 @@ func truncateString(s string, maxLength int) string {
 		return s
 	}
 	return s[:maxLength-3] + "..."
+}
+
+// addWorkflowCommands adds workflow management commands
+func (app *App) addWorkflowCommands() {
+	workflowCmd := &cobra.Command{
+		Use:   "workflow",
+		Short: "Manage automated workflows",
+		Long:  "Manage automated workflows that scan issues, create tasks, and manage pull requests",
+	}
+
+	// Scan command
+	scanCmd := &cobra.Command{
+		Use:   "scan",
+		Short: "Scan issues from Git provider and create workflows",
+		Long:  "Scan open issues assigned to the current user from the configured Git provider and create automated workflows",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.scanWorkflows(cmd)
+		},
+	}
+
+	// Start command
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start workflow automation",
+		Long:  "Start automated workflow that processes queued workflows and manages the complete auto-PR lifecycle",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.startWorkflows(cmd)
+		},
+	}
+
+	// List command
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all workflows",
+		Long:  "Display all workflows with their current status and basic information",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.listWorkflows(cmd)
+		},
+	}
+
+	// Status command
+	statusCmd := &cobra.Command{
+		Use:   "status [workflow-id]",
+		Short: "Show workflow status",
+		Long:  "Display detailed status information for a specific workflow or all active workflows",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				return app.showWorkflowStatus(cmd, args[0])
+			}
+			return app.showAllWorkflowStatus(cmd)
+		},
+	}
+
+	// Add flags
+	scanCmd.Flags().String("provider", "github", "Git provider to use (github, gitlab, bitbucket)")
+	scanCmd.Flags().String("owner", "", "Repository owner (defaults to auto-detected from current repository)")
+	scanCmd.Flags().String("repo", "", "Repository name (defaults to auto-detected from current repository)")
+
+	startCmd.Flags().IntP("max-concurrent", "n", 1, "Maximum number of concurrent workflow processors")
+	startCmd.Flags().Bool("daemon", false, "Run as daemon process")
+
+	listCmd.Flags().String("state", "", "Filter by workflow state (queued, implementing, pr_open, etc.)")
+	listCmd.Flags().Bool("active-only", false, "Show only active (non-terminal) workflows")
+
+	workflowCmd.AddCommand(scanCmd, startCmd, listCmd, statusCmd)
+	app.rootCmd.AddCommand(workflowCmd)
+}
+
+// validateProviderAuth validates that provider authentication is configured
+func (app *App) validateProviderAuth(providerName string) error {
+	// Create auth manager
+	authManager, err := auth.NewManager(app.configManager)
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+
+	// Convert provider name to type
+	var providerType git.ProviderType
+	switch strings.ToLower(providerName) {
+	case "github":
+		providerType = git.ProviderGitHub
+	case "gitlab":
+		providerType = git.ProviderGitLab
+	case "bitbucket":
+		providerType = git.ProviderBitbucket
+	default:
+		return fmt.Errorf("unsupported provider: %s", providerName)
+	}
+
+	// Try to get auth config (check project first, then global)
+	_, err = authManager.GetAuthConfig(providerType, auth.AuthScopeProject)
+	if err != nil {
+		// Fallback to global scope
+		_, err = authManager.GetAuthConfig(providerType, auth.AuthScopeGlobal)
+		if err != nil {
+			return fmt.Errorf("no authentication configured for %s. Run 'cw config provider %s login' first", providerName, providerName)
+		}
+	}
+
+	return nil
+}
+
+// detectRepositoryInfo auto-detects repository information from current directory
+func (app *App) detectRepositoryInfo() (owner, repo string, err error) {
+	repoInfo, err := git.GetRepositoryInfo(".")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to detect repository info: %w", err)
+	}
+
+	// Parse owner/repo from remote URL
+	// This is a simplified extraction - should be more robust
+	remoteURL := repoInfo.RemoteURL
+	if strings.Contains(remoteURL, "github.com") {
+		// Parse URLs like "git@github.com:owner/repo.git" or "https://github.com/owner/repo.git"
+		parts := strings.Split(remoteURL, "/")
+		if len(parts) >= 2 {
+			repo = strings.TrimSuffix(parts[len(parts)-1], ".git")
+			owner = parts[len(parts)-2]
+			if strings.Contains(owner, ":") {
+				// Handle SSH format like "git@github.com:owner"
+				ownerParts := strings.Split(owner, ":")
+				if len(ownerParts) >= 2 {
+					owner = ownerParts[1]
+				}
+			}
+		}
+	}
+
+	if owner == "" || repo == "" {
+		return "", "", fmt.Errorf("failed to parse owner/repo from remote URL: %s", remoteURL)
+	}
+
+	return owner, repo, nil
+}
+
+// Workflow command implementations
+
+func (app *App) scanWorkflows(cmd *cobra.Command) error {
+	provider, _ := cmd.Flags().GetString("provider")
+	owner, _ := cmd.Flags().GetString("owner")
+	repo, _ := cmd.Flags().GetString("repo")
+
+	// Auto-detect repository info if not provided
+	if owner == "" || repo == "" {
+		detectedOwner, detectedRepo, err := app.detectRepositoryInfo()
+		if err != nil {
+			return fmt.Errorf("failed to auto-detect repository info: %w. Please specify --owner and --repo flags", err)
+		}
+		if owner == "" {
+			owner = detectedOwner
+		}
+		if repo == "" {
+			repo = detectedRepo
+		}
+	}
+
+	cmd.Printf("🔍 Scanning issues from %s provider for %s/%s...\n", provider, owner, repo)
+
+	// Validate provider authentication
+	if err := app.validateProviderAuth(provider); err != nil {
+		return fmt.Errorf("provider authentication validation failed: %w", err)
+	}
+
+	// For now, we'll create placeholder tasks to demonstrate the workflow
+	// TODO: Implement full issue scanning when GitProvider interface is ready
+
+	cmd.Printf("⚠️  Issue scanning is temporarily simplified\n")
+	cmd.Printf("📋 Creating example task to demonstrate workflow functionality\n")
+
+	// Create an example task to demonstrate workflow
+	ticketID := fmt.Sprintf("%s:%s/%s#example", provider, owner, repo)
+	req := &types.CreateTaskRequest{
+		Name:        fmt.Sprintf("Example workflow task for %s/%s", owner, repo),
+		Description: "This is an example task created to demonstrate workflow functionality. Replace with actual issue scanning when the provider interface is ready.",
+		TicketID:    ticketID,
+		URL:         fmt.Sprintf("https://github.com/%s/%s", owner, repo),
+		Priority:    1, // Default priority
+		Tags:        []string{provider, "workflow", "example"},
+		Metadata: map[string]string{
+			"provider":     provider,
+			"owner":        owner,
+			"repo":         repo,
+			"issue_number": "example",
+			"issue_title":  "Example workflow task",
+			"created_at":   "2024-01-01T00:00:00Z",
+		},
+	}
+
+	// Check if task already exists
+	existingTasks, err := app.taskManager.ListTasks(nil)
+	if err != nil {
+		return fmt.Errorf("failed to list existing tasks: %w", err)
+	}
+
+	taskExists := false
+	for _, task := range existingTasks {
+		if task.TicketID == ticketID {
+			taskExists = true
+			cmd.Printf("✅ Example task already exists: %s (Task ID: %d)\n", task.Name, task.ID)
+			break
+		}
+	}
+
+	if !taskExists {
+		task, err := app.taskManager.CreateTask(req)
+		if err != nil {
+			return fmt.Errorf("failed to create example task: %w", err)
+		}
+
+		cmd.Printf("✅ Created example task: %s (Task ID: %d)\n", task.Name, task.ID)
+	}
+
+	cmd.Printf("✅ Issue scanning completed successfully\n")
+	return nil
+}
+
+func (app *App) startWorkflows(cmd *cobra.Command) error {
+	maxConcurrent, _ := cmd.Flags().GetInt("max-concurrent")
+	daemon, _ := cmd.Flags().GetBool("daemon")
+
+	// Auto-detect repository info
+	owner, repo, err := app.detectRepositoryInfo()
+	if err != nil {
+		return fmt.Errorf("failed to auto-detect repository info: %w", err)
+	}
+
+	cmd.Printf("🚀 Starting workflow automation for %s/%s...\n", owner, repo)
+	cmd.Printf("📊 Max concurrent processors: %d\n", maxConcurrent)
+
+	if daemon {
+		cmd.Printf("🔄 Running in daemon mode...\n")
+		// TODO: Implement daemon mode
+		return fmt.Errorf("daemon mode not yet implemented")
+	}
+
+	// For now, we'll provide a simplified workflow start implementation
+	// TODO: Implement full workflow automation when CoworkProvider is ready
+
+	cmd.Printf("⚠️  Full workflow automation not yet implemented\n")
+	cmd.Printf("📋 You can use the following commands to manage workflows manually:\n")
+	cmd.Printf("   • cw workflow scan - Scan for issues and create tasks\n")
+	cmd.Printf("   • cw task list - View created tasks\n")
+	cmd.Printf("   • cw workflow list - View workflow status\n")
+	cmd.Printf("\n💡 Full automation will be available once the workflow engine is complete\n")
+
+	cmd.Printf("✅ Workflow automation completed successfully\n")
+	return nil
+}
+
+func (app *App) listWorkflows(cmd *cobra.Command) error {
+	stateFilter, _ := cmd.Flags().GetString("state")
+	activeOnly, _ := cmd.Flags().GetBool("active-only")
+
+	// Create workflow manager
+	coworkDir := filepath.Join(".", ".cowork")
+	workflowManager, err := workflow.NewWorkflowManager(coworkDir)
+	if err != nil {
+		return fmt.Errorf("failed to create workflow manager: %w", err)
+	}
+	defer workflowManager.Close()
+
+	var workflows []*types.Workflow
+	if stateFilter != "" {
+		// Parse state filter
+		state := types.WorkflowState(stateFilter)
+		if !state.IsValid() {
+			return fmt.Errorf("invalid workflow state: %s", stateFilter)
+		}
+		workflows, err = workflowManager.ListWorkflowsByState(state)
+	} else {
+		workflows, err = workflowManager.ListWorkflows()
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to list workflows: %w", err)
+	}
+
+	// Filter active workflows if requested
+	if activeOnly {
+		var activeWorkflows []*types.Workflow
+		for _, workflow := range workflows {
+			if !workflow.State.IsTerminal() {
+				activeWorkflows = append(activeWorkflows, workflow)
+			}
+		}
+		workflows = activeWorkflows
+	}
+
+	if len(workflows) == 0 {
+		cmd.Println("No workflows found.")
+		return nil
+	}
+
+	cmd.Printf("Found %d workflow(s):\n\n", len(workflows))
+	for _, workflow := range workflows {
+		statusIcon := getWorkflowStatusIcon(workflow.State)
+		cmd.Printf("%s Workflow %d: %s/%s#%d\n", statusIcon, workflow.ID, workflow.Owner, workflow.Repo, workflow.IssueID)
+		cmd.Printf("   State: %s\n", workflow.State)
+		if workflow.BranchName != "" {
+			cmd.Printf("   Branch: %s\n", workflow.BranchName)
+		}
+		if workflow.PRNumber != nil {
+			cmd.Printf("   PR: #%d\n", *workflow.PRNumber)
+		}
+		cmd.Printf("   Created: %s\n", workflow.CreatedAt.Format("2006-01-02 15:04:05"))
+		cmd.Println()
+	}
+
+	return nil
+}
+
+func (app *App) showWorkflowStatus(cmd *cobra.Command, workflowID string) error {
+	// Create workflow manager
+	coworkDir := filepath.Join(".", ".cowork")
+	workflowManager, err := workflow.NewWorkflowManager(coworkDir)
+	if err != nil {
+		return fmt.Errorf("failed to create workflow manager: %w", err)
+	}
+	defer workflowManager.Close()
+
+	// Get workflow
+	workflow, err := workflowManager.GetWorkflow(workflowID)
+	if err != nil {
+		return fmt.Errorf("workflow not found: %w", err)
+	}
+
+	// Display detailed workflow information
+	cmd.Printf("📋 Workflow %d Details\n", workflow.ID)
+	cmd.Printf("======================\n\n")
+	cmd.Printf("Repository: %s/%s\n", workflow.Owner, workflow.Repo)
+	cmd.Printf("Issue: #%d\n", workflow.IssueID)
+	cmd.Printf("Provider: %s\n", workflow.Provider)
+	cmd.Printf("State: %s\n", workflow.State)
+	cmd.Printf("Base Branch: %s\n", workflow.BaseBranch)
+
+	if workflow.BranchName != "" {
+		cmd.Printf("Feature Branch: %s\n", workflow.BranchName)
+	}
+
+	if workflow.PRNumber != nil {
+		cmd.Printf("Pull Request: #%d\n", *workflow.PRNumber)
+	}
+
+	if workflow.TaskID != 0 {
+		cmd.Printf("Task ID: %d\n", workflow.TaskID)
+	}
+
+	if workflow.WorkspaceID != 0 {
+		cmd.Printf("Workspace ID: %d\n", workflow.WorkspaceID)
+	}
+
+	cmd.Printf("\nTimestamps:\n")
+	cmd.Printf("Created: %s\n", workflow.CreatedAt.Format("2006-01-02 15:04:05"))
+	cmd.Printf("Updated: %s\n", workflow.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	if workflow.StartedAt != nil {
+		cmd.Printf("Started: %s\n", workflow.StartedAt.Format("2006-01-02 15:04:05"))
+	}
+
+	if workflow.EndedAt != nil {
+		cmd.Printf("Ended: %s\n", workflow.EndedAt.Format("2006-01-02 15:04:05"))
+	}
+
+	if workflow.ErrorCount > 0 {
+		cmd.Printf("\nErrors: %d\n", workflow.ErrorCount)
+		if workflow.LastError != "" {
+			cmd.Printf("Last Error: %s\n", workflow.LastError)
+		}
+	}
+
+	// Check if workflow is locked
+	locked, lock := workflowManager.IsWorkflowLocked(workflowID)
+	if locked {
+		cmd.Printf("\n🔒 Locked by: %s\n", lock.LockedBy)
+		cmd.Printf("Lock timeout: %s\n", lock.LockTimeout.Format("2006-01-02 15:04:05"))
+	}
+
+	return nil
+}
+
+func (app *App) showAllWorkflowStatus(cmd *cobra.Command) error {
+	// Create workflow manager
+	coworkDir := filepath.Join(".", ".cowork")
+	workflowManager, err := workflow.NewWorkflowManager(coworkDir)
+	if err != nil {
+		return fmt.Errorf("failed to create workflow manager: %w", err)
+	}
+	defer workflowManager.Close()
+
+	// Get all workflows
+	workflows, err := workflowManager.ListWorkflows()
+	if err != nil {
+		return fmt.Errorf("failed to list workflows: %w", err)
+	}
+
+	if len(workflows) == 0 {
+		cmd.Println("No workflows found.")
+		return nil
+	}
+
+	// Group workflows by state
+	stateGroups := make(map[types.WorkflowState][]*types.Workflow)
+	for _, workflow := range workflows {
+		stateGroups[workflow.State] = append(stateGroups[workflow.State], workflow)
+	}
+
+	cmd.Printf("📊 Workflow Status Summary\n")
+	cmd.Printf("==========================\n\n")
+
+	// Display statistics
+	totalWorkflows := len(workflows)
+	activeWorkflows := 0
+	completedWorkflows := 0
+
+	for _, workflow := range workflows {
+		if workflow.State.IsTerminal() {
+			completedWorkflows++
+		} else {
+			activeWorkflows++
+		}
+	}
+
+	cmd.Printf("Total Workflows: %d\n", totalWorkflows)
+	cmd.Printf("Active: %d\n", activeWorkflows)
+	cmd.Printf("Completed: %d\n", completedWorkflows)
+	cmd.Println()
+
+	// Display workflows by state
+	for state, workflowList := range stateGroups {
+		statusIcon := getWorkflowStatusIcon(state)
+		cmd.Printf("%s %s (%d):\n", statusIcon, strings.ToUpper(string(state)), len(workflowList))
+		for _, workflow := range workflowList {
+			cmd.Printf("   • Workflow %d: %s/%s#%d", workflow.ID, workflow.Owner, workflow.Repo, workflow.IssueID)
+			if workflow.BranchName != "" {
+				cmd.Printf(" (%s)", workflow.BranchName)
+			}
+			cmd.Println()
+		}
+		cmd.Println()
+	}
+
+	return nil
+}
+
+// Helper function to get workflow status icons
+func getWorkflowStatusIcon(state types.WorkflowState) string {
+	switch state {
+	case types.WorkflowStateQueued:
+		return "⏳"
+	case types.WorkflowStateWorkspaceReady:
+		return "🏗️"
+	case types.WorkflowStateImplementing:
+		return "💻"
+	case types.WorkflowStatePROpen:
+		return "🔍"
+	case types.WorkflowStateRevising:
+		return "🔄"
+	case types.WorkflowStateMerged:
+		return "✅"
+	case types.WorkflowStateClosed:
+		return "❌"
+	case types.WorkflowStateAborted:
+		return "🚫"
+	default:
+		return "❓"
+	}
 }

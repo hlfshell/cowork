@@ -1,0 +1,166 @@
+# Cowork CLI Development Rules
+
+## Code Quality Standards
+
+### Variable Naming
+- Use descriptive, explanatory names instead of short abbreviations
+- Include units in variable names when applicable
+- Examples:
+  - ✅ `delay_seconds := 30` (not `t := 30`)
+  - ✅ `max_retry_attempts := 3` (not `max := 3`)
+  - ✅ `workspace_timeout_minutes := 60` (not `timeout := 60`)
+  - ✅ `container_memory_mb := 2048` (not `mem := 2048`)
+
+### Function Documentation
+- Every exported function must have a godoc comment
+- Every unexported function should have a comment explaining its purpose
+- Follow Go documentation conventions:
+  ```go
+  // CreateWorkspace initializes a new isolated workspace for the given task.
+  // It creates a worktree or clone based on the isolation level specified
+  // in the configuration. Returns the workspace path and any error encountered.
+  func CreateWorkspace(taskName string, isolationLevel IsolationLevel) (string, error) {
+  ```
+
+### Error Handling
+- Always check and handle errors explicitly
+- Use descriptive error messages that include context
+- Wrap errors with additional context when appropriate
+- Example:
+  ```go
+  workspacePath, err := createWorktree(repoPath, branchName)
+  if err != nil {
+      return "", fmt.Errorf("failed to create worktree for branch %s: %w", branchName, err)
+  }
+  ```
+
+## Testing Standards
+
+### Test Coverage
+- Aim for 90%+ test coverage
+- Write tests for all exported functions
+- Test both success and failure scenarios
+- Test edge cases and boundary conditions
+
+### Test Documentation
+- Every test function should have a comment explaining the use case it covers
+- Use descriptive test names that explain the scenario
+- Group related tests using subtests
+- Example:
+  ```go
+  func TestCreateWorkspace_WithValidTaskName(t *testing.T) {
+      // Test case: Creating a workspace with a valid task name should succeed
+      // and return a valid workspace path
+      taskName := "oauth-refresh"
+      isolationLevel := IsolationLevelWorktree
+      
+      workspacePath, err := CreateWorkspace(taskName, isolationLevel)
+      
+      assert.NoError(t, err)
+      assert.NotEmpty(t, workspacePath)
+      assert.DirExists(t, workspacePath)
+  }
+  ```
+
+### Mocking Policy
+- Avoid mocking whenever possible
+- Prefer integration tests over unit tests with mocks
+- Only mock external dependencies that are:
+  - Unreliable (network calls)
+  - Expensive (database operations)
+  - Non-deterministic (time-based operations)
+- Use real filesystem operations in tests
+- Use real Git operations with temporary repositories
+
+### Test Structure
+- Use table-driven tests for multiple scenarios
+- Set up test fixtures in temporary directories
+- Clean up after tests
+- Use `t.Parallel()` for independent tests
+
+## Architecture Guidelines
+
+### Package Structure
+- Follow standard Go project layout
+- Keep packages focused and cohesive
+- Use interfaces for dependency injection
+- Separate concerns: CLI, workspace management, container orchestration
+
+### Configuration
+- Use environment variables for configuration
+- Support configuration files (.cwrules, .cwstate)
+- Validate configuration on startup
+- Provide sensible defaults
+
+### Logging
+- Use structured logging with levels
+- Include relevant context in log messages
+- Use consistent log field names
+- Consider log output for debugging and auditing
+
+## Security Considerations
+
+### Workspace Isolation
+- Ensure proper file permissions
+- Validate workspace paths
+- Prevent path traversal attacks
+- Isolate container resources
+
+### State Management
+- Validate state file integrity
+- Handle concurrent access safely
+- Provide state recovery mechanisms
+- Audit state changes
+
+## Performance Guidelines
+
+### Resource Management
+- Clean up temporary resources
+- Limit concurrent operations
+- Monitor resource usage
+- Provide resource limits configuration
+
+### Git Operations
+- Use efficient Git operations (worktree vs clone)
+- Cache Git metadata when appropriate
+- Handle large repositories gracefully
+- Optimize for common workflows
+
+## CLI Design
+
+### Command Structure
+- Use consistent command naming
+- Provide helpful usage messages
+- Include examples in help text
+- Support both short and long flags
+
+### User Experience
+- Provide clear error messages
+- Show progress for long operations
+- Support interactive prompts when needed
+- Maintain backward compatibility
+
+## File Organization
+
+### Project Layout
+```
+cowork/
+├── cmd/cowork/          # Main CLI entry point
+├── internal/            # Private application code
+│   ├── workspace/       # Workspace management
+│   ├── container/       # Container orchestration
+│   ├── agent/          # AI agent integration
+│   ├── git/            # Git operations
+│   └── config/         # Configuration management
+├── pkg/                # Public packages (if any)
+├── testdata/           # Test fixtures
+├── docs/               # Documentation
+└── scripts/            # Build and deployment scripts
+```
+
+### File Naming
+- Use snake_case for file names
+- Group related functionality in the same file
+- Keep files under 500 lines when possible
+- Use descriptive file names that indicate purpose
+

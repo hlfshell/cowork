@@ -115,6 +115,7 @@ temp/
 
 # Cowork workspace directories
 .cw/
+.cowork/
 
 # Cowork workspace metadata files
 .cw-workspace.json
@@ -129,3 +130,11 @@ docs/_build/
 
 # Scripts output
 scripts/output/
+
+# Local secrets and scratch files
+token
+test-git-dir/
+
+# Additional local build artifacts
+cowork
+test-aider
